@@ -24,3 +24,6 @@ README.txt
 /mysite/logs
 /mysite/static/styles/*.css
 *.pyc
+
+# graphify knowledge-graph output (generated locally)
+graphify-out/
