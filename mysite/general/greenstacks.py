@@ -18,7 +18,7 @@ def getEquinoxDreams() -> dict:
     results = {}
     for dreamNumber in [1, 12, 29]:
         try:
-            results[f"Dream{dreamNumber}"] = session_data.account.equinox_dreams[dreamNumber]
+            results[f"Dream{dreamNumber}"] = session_data.account.equinox.dreams[dreamNumber].completed
         except Exception as reason:
             logger.warning(f"Unable to access Equinox Dream {dreamNumber}: {reason}. Defaulting to False.")
             results[f"Dream{dreamNumber}"] = False
@@ -42,8 +42,8 @@ def getMissableGStacksAdviceSection(owned_stuff: Assets) -> AdviceSection:
 
     quests_completed_on_all_toons = [
         name
-        for name in session_data.account.compiled_quests
-        if session_data.account.compiled_quests[name]['CompletedCount'] == session_data.account.character_count
+        for name, quest in session_data.account.quests.items()
+        if quest.completed_count == len(session_data.account.characters)
     ]
 
     advice_EndangeredQuestGStacks = []

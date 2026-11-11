@@ -1,189 +1,140 @@
-from consts.progression_tiers import true_max_tiers
+from consts.progression_tiers import true_max_tiers, grimoire_progressionTiers
 from models.general.session_data import session_data
 
-from models.advice.advice import Advice
 from models.advice.advice_section import AdviceSection
 from models.advice.advice_group import AdviceGroup
-from models.advice.generators.w2 import get_arcade_advice
 
-from utils.all_talentsDict import all_talentsDict
-from utils.safer_data_handling import safer_math_log
+from utils.misc.add_subgroup_if_available_slot import add_subgroup_if_available_slot
 from utils.logging import get_logger
 
-from consts.consts_autoreview import (
-    # grimoire_progressionTiers, break_you_best, infinity_string,
-    ValueToMulti, EmojiType,
-)
-from consts.idleon.lava_func import lava_func
-from consts.idleon.master_classes.grimoire import grimoire_bones_list
-from utils.text_formatting import notateNumber
+from consts.consts_autoreview import break_you_best, build_subgroup_label
+from utils.text_formatting import pl
 
 logger = get_logger(__name__)
 
-def getProgressionTiersAdviceGroup() -> tuple[AdviceGroup, int, int, int]:
-    grimoire_AdviceDict = {
-        'Tiers': {},
+def getProgressionTiersAdviceGroup(grimoire) -> tuple[dict[str, AdviceGroup], int, int, int]:
+    grimoire_Advices = {
+        'Total Upgrades': {},
+        'Specific Upgrades': {},
+        'Stacks': {},
     }
     optional_tiers = 0
-    true_max = true_max_tiers['Grimoire']
+    true_max = true_max_tiers['The Grimoire']
     max_tier = true_max - optional_tiers
-    tier_Grimoire = 0
+    tier_TotalUpgrades = 0
+    tier_SpecificUpgrades = 0
+    tier_Stacks = 0
 
-    tiers_ag = AdviceGroup(
-        tier=tier_Grimoire,
-        pre_string='Progression Tiers',
-        advices=grimoire_AdviceDict['Tiers']
+    #Assess Tiers
+    for tier_number, requirements in grimoire_progressionTiers.items():
+        subgroup_label = build_subgroup_label(tier_number, max_tier)
+
+        #Total Upgrades
+        if grimoire.total_upgrades < requirements.get('Total Upgrades', 0):
+            add_subgroup_if_available_slot(grimoire_Advices['Total Upgrades'], subgroup_label)
+            if subgroup_label in grimoire_Advices['Total Upgrades']:
+                grimoire_Advices['Total Upgrades'][subgroup_label].append(
+                    grimoire.get_total_upgrades_tier_advice(requirements.get('Total Upgrades', 0))
+                )
+        if subgroup_label not in grimoire_Advices['Total Upgrades'] and tier_TotalUpgrades == tier_number - 1:
+            tier_TotalUpgrades = tier_number
+
+        #Specific Upgrades - account-wide talents
+        for upgrade_name, required_level in requirements.get('Specific Upgrades', {}).items():
+            upgrade_details = grimoire.upgrades.get(upgrade_name)
+            current_level = upgrade_details.level if upgrade_details else 0
+            if current_level < required_level:
+                add_subgroup_if_available_slot(grimoire_Advices['Specific Upgrades'], subgroup_label)
+                if subgroup_label in grimoire_Advices['Specific Upgrades']:
+                    grimoire_Advices['Specific Upgrades'][subgroup_label].append(
+                        grimoire.get_specific_upgrade_tier_advice(upgrade_name, required_level)
+                    )
+        if subgroup_label not in grimoire_Advices['Specific Upgrades'] and tier_SpecificUpgrades == tier_number - 1:
+            tier_SpecificUpgrades = tier_number
+
+        #Stacks - Knockout/Elimination/Annihilation
+        for stack_type, required_stacks in requirements.get('Stacks', {}).items():
+            current_stacks = grimoire.stacks.get(stack_type, 0)
+            if current_stacks < required_stacks:
+                add_subgroup_if_available_slot(grimoire_Advices['Stacks'], subgroup_label)
+                if subgroup_label in grimoire_Advices['Stacks']:
+                    grimoire_Advices['Stacks'][subgroup_label].append(
+                        grimoire.get_stacks_tier_advice(stack_type, required_stacks)
+                    )
+        if subgroup_label not in grimoire_Advices['Stacks'] and tier_Stacks == tier_number - 1:
+            tier_Stacks = tier_number
+
+    #Generate AdviceGroups
+    grimoire_AdviceGroupDict = {}
+    grimoire_AdviceGroupDict['Total Upgrades'] = AdviceGroup(
+        tier=tier_TotalUpgrades,
+        pre_string='Purchase more Total Grimoire Upgrades',
+        advices=grimoire_Advices['Total Upgrades'],
     )
-    overall_SectionTier = min(true_max, tier_Grimoire)
-    return tiers_ag, overall_SectionTier, max_tier, true_max
+    grimoire_AdviceGroupDict['Specific Upgrades'] = AdviceGroup(
+        tier=tier_SpecificUpgrades,
+        pre_string=f"Level up the following account-wide Grimoire Upgrade{pl(grimoire_Advices['Specific Upgrades'])}",
+        advices=grimoire_Advices['Specific Upgrades'],
+    )
+    grimoire_AdviceGroupDict['Stacks'] = AdviceGroup(
+        tier=tier_Stacks,
+        pre_string='Build up the following Knockout/Elimination/Annihilation Stacks',
+        advices=grimoire_Advices['Stacks'],
+        post_string='Stack targets rotate through a fixed monster order',
+    )
+
+    overall_SectionTier = min(true_max, tier_TotalUpgrades, tier_SpecificUpgrades, tier_Stacks)
+    return grimoire_AdviceGroupDict, overall_SectionTier, max_tier, true_max
 
 
 def getGrimoireCurrenciesAdviceGroup(grimoire) -> AdviceGroup:
     currency_advices = {
         'Currencies': [],
     }
-    currency_advices['Currencies'].append(Advice(
-        label=f"Total Bones Collected: {notateNumber('Basic', grimoire.total_bones_collected, 3)}",
-        picture_class='wraith-overlord'
-    ))
-    if grimoire.charred_bones_enabled:
-        currency_advices['Currencies'].append(Advice(
-            label=f"Charred Bones Enabled! Collect 1 per full AFK hour while fighting on a Death Bringer. Maximize your /hr display "
-                  f"within AFK Info screen before consuming!",
-            picture_class='charred-bone',
-            progression=1,
-            goal=1
-        ))
-    else:
-        currency_advices['Currencies'].append(Advice(
-            label=f"Fight with Wraith Form enabled to collect 1,000 Charred Fragments, then use the stack. "
-                  f"This enables AFK Fighting on Death Bringers to produce 1 Charred Bone per hour!",
-            picture_class='charred-fragment',
-            progression=min(1000, session_data.account.all_assets.get('Quest98').amount),
-            goal=1000
-        ))
-    currency_advices['Currencies'] += [
-        Advice(
-            label=f"{bone_name}: {notateNumber('Basic', grimoire.bones[bone_index], 3)}",
-            picture_class=f'grimoire-bone-{bone_index}'
-        ) for bone_index, bone_name in enumerate(grimoire_bones_list)
-    ]
+    currency_advices['Currencies'].append(grimoire.get_total_bones_collected_advice())
+    currency_advices['Currencies'].append(grimoire.get_charred_bones_advice())
+    currency_advices['Currencies'] += grimoire.get_bone_advices()
 
     #Bone Multi calculation groups
-    currency_advices['Currencies'].append(Advice(
-        label=f"Total Bone multi: {grimoire.bone_calc['Total']:.3f}x",
-        picture_class='grimoire'
-    ))
+    currency_advices['Currencies'].append(grimoire.get_bone_multi_advice())
 
-    mga_label = f"Bone Multi Group A: {grimoire.bone_calc['mga']:.2f}x"
+    mga_label = f"Bone Multi Group A: {grimoire.bone_multi.mga:.2f}x"
     currency_advices[mga_label] = [
         session_data.account.sneaking.pristine_charms[
             'Glimmerchain'
         ].get_obtained_advice()
     ]
 
-    db_index = None
-    grimoire_preset_level = 100
+    mgb_label = f"Bone Multi Group B: {grimoire.bone_multi.mgb:.3f}x"
+    currency_advices[mgb_label] = [grimoire.get_grimoire_talent_advice()]
 
-    for db in session_data.account.dbs:
-        if db_index is None:
-            db_index = db.character_index
-        if db.current_preset_talents.get('196', 0) > grimoire_preset_level:
-            db_index = db.character_index
-            grimoire_preset_level = db.current_preset_talents.get('196', 0)
-        if db.secondary_preset_talents.get('196', 0) > grimoire_preset_level:
-            grimoire_preset_level = db.secondary_preset_talents.get('196', 0)
-
-    mgb_label = f"Bone Multi Group B: {grimoire.bone_calc['mgb']:.3f}x"
-    currency_advices[mgb_label] = [
-        Advice(
-            label=f"{grimoire_preset_level}/{session_data.account.library['MaxBookLevel']} booked Grimoire:"
-                  f"<br>Max Preset Level {grimoire_preset_level + session_data.account.all_characters[db_index].total_bonus_talent_levels} on "
-                  f"{session_data.account.all_characters[db_index].character_name} including bonus talent levels",
-            picture_class='grimoire',
-            progression=grimoire_preset_level,
-            goal=session_data.account.library['MaxBookLevel']
-        )
-    ]
-
-    mgc_label = f"Bone Multi Group C: {grimoire.bone_calc['mgc']:.2f}x"
+    mgc_label = f"Bone Multi Group C: {grimoire.bone_multi.mgc:.2f}x"
     currency_advices[mgc_label] = [
         session_data.account.caverns.caves['Gambit'].bonuses[12].get_bonus_advice()
     ]
 
-    mgd_label = f"Bone Multi Group D: {grimoire.bone_calc['mgd']:.2f}x"
-    currency_advices[mgd_label] = [
-        Advice(
-            label=f"Deathbringer Hood of Death: +25%",
-            picture_class='deathbringer-hood-of-death',
-            progression=int(session_data.account.all_assets.get('EquipmentHats112').amount > 0),
-            goal=1,
-            resource='gem'
-        ),
-    ]
+    mgd_label = f"Bone Multi Group D: {grimoire.bone_multi.mgd:.2f}x"
+    currency_advices[mgd_label] = [grimoire.get_hood_advice()]
 
-    mge_label = f"Bone Multi Group E: {grimoire.bone_calc['mge']:.2f}x"
+    mge_label = f"Bone Multi Group E: {grimoire.bone_multi.mge:.2f}x"
     currency_advices[mge_label] = []
     currency_advices[mge_label].append(grimoire.upgrades["Bones o' Plenty"].get_advice(grimoire.total_upgrades))
     bh = grimoire.upgrades['Bovinae Hoarding']
-    bh_stacks_text = (
-        f"<br>{safer_math_log(grimoire.bones[3], 'Lava'):.3f} stacks = "
-        f"{bh.total_value * safer_math_log(grimoire.bones[3], 'Lava'):.3f}% total"
-    )
+    bh_stacks_text = grimoire.get_bovinae_stacks_text()
     currency_advices[mge_label].append(bh.get_advice(grimoire.total_upgrades, bh_stacks_text))
-    currency_advices[mge_label].append(get_arcade_advice(40))
+    currency_advices[mge_label].append(session_data.account.arcade[40].get_advice())
 
-    lab_jewel = session_data.account.labJewels['Deadly Wrath Jewel']
-    lab_jewel_active = lab_jewel['Enabled']
-    currency_advices[mge_label].append(Advice(
-        label=f"Lab Jewel 'Deadly Wrath Jewel': +{lab_jewel['Value'] * lab_jewel_active}/{lab_jewel['Value']}%",
-        picture_class='deadly-wrath-jewel',
-        progression=int(lab_jewel_active),
-        goal=1
-    ))
-
-    mgf_label = f"Bone Multi Group F: {grimoire.bone_calc['mgf']:.2f}x"
-    db_index = None
-    tombstone_preset_level = 100
-    for db in session_data.account.dbs:
-        if db_index is None:
-            db_index = db.character_index
-        if db.current_preset_talents.get('198', 0) > tombstone_preset_level:
-            db_index = db.character_index
-            tombstone_preset_level = db.current_preset_talents.get('198', 0)
-        if db.secondary_preset_talents.get('198', 0) > tombstone_preset_level:
-            tombstone_preset_level = db.secondary_preset_talents.get('198', 0)
-
-    tombstone_per_stack = lava_func(
-        funcType=all_talentsDict[198]['funcX'],
-        level=tombstone_preset_level,
-        x1=all_talentsDict[198]['x1'],
-        x2=all_talentsDict[198]['x2'],
+    currency_advices[mge_label].append(
+        session_data.account.lab_jewels['Deadly Wrath Jewel'].get_bonus_advice()
     )
 
+    mgf_label = f"Bone Multi Group F: {grimoire.bone_multi.mgf:.2f}x"
     currency_advices[mgf_label] = [
-        Advice(
-            label=f"{tombstone_preset_level}/{session_data.account.library['MaxBookLevel']} booked Graveyard Shift:"
-                  f"<br>Max Preset Level {tombstone_preset_level + session_data.account.all_characters[db_index].total_bonus_talent_levels} on "
-                  f"{session_data.account.all_characters[db_index].character_name} including bonus talent levels",
-            picture_class='graveyard-shift',
-            progression=tombstone_preset_level,
-            goal=session_data.account.library['MaxBookLevel']
-        ),
-        Advice(
-            label=f"<br>Per stack: +{tombstone_per_stack:.3f}%"
-                  f"<br>50 stacks: {ValueToMulti(50 * tombstone_per_stack):.3f}x"
-                  f"<br>100 stacks: {ValueToMulti(100 * tombstone_per_stack):.3f}x"
-                  f"<br>200 stacks: {ValueToMulti(200 * tombstone_per_stack):.3f}x"
-                  f"<br>300 stacks: {ValueToMulti(300 * tombstone_per_stack):.3f}x"
-                  f"<br>500 stacks: {ValueToMulti(500 * tombstone_per_stack):.3f}x",
-            picture_class='graveyard-shift-tombstone',
-            completed=True,
-            informational=True
-        )
+        grimoire.get_graveyard_shift_advice(),
+        grimoire.get_tombstone_stacks_advice(),
     ]
 
-    mgg_label = f"Bone Multi Group G: {grimoire.bone_calc['mgg']:.2f}x"
+    mgg_label = f"Bone Multi Group G: {grimoire.bone_multi.mgg:.2f}x"
     currency_advices[mgg_label] = [
         session_data.account.emperor["Deathbringer Extra Bones"].get_bonus_advice()
     ]
@@ -208,10 +159,7 @@ def getGrimoireUpgradesAdviceGroup(grimoire) -> AdviceGroup:
     upgrades_AdviceDict['General Info'] = []
 
     #Upgrades
-    upgrades_AdviceDict['Upgrades'] = [Advice(
-        label=f"Total Grimoire Upgrades: {grimoire.total_upgrades:,}",
-        picture_class='grimoire'
-    )]
+    upgrades_AdviceDict['Upgrades'] = [grimoire.get_total_upgrades_advice()]
     upgrades_AdviceDict['Upgrades'] += [
         upgrade_details.get_advice(grimoire.total_upgrades) for upgrade_details in grimoire.upgrades.values()
     ]
@@ -232,14 +180,14 @@ def getGrimoireUpgradesAdviceGroup(grimoire) -> AdviceGroup:
 
 def getGrimoireAdviceSection() -> AdviceSection:
     #Check if player has reached this section
-    if 'Death Bringer' not in session_data.account.classes:
+    if 'Death Bringer' not in session_data.account.characters.classes:
         grimoire_AdviceSection = AdviceSection(
             name="The Grimoire",
             tier="Not Yet Evaluated",
             header="Come back after unlocking a Death Bringer in World 6!",
             picture='customized/Wraith.gif',
             unrated=True,
-            unreached=session_data.account.highest_world_reached < 6,
+            unreached=session_data.account.world_progress.highest_reached < 6,
             completed=False
         )
         return grimoire_AdviceSection
@@ -248,8 +196,7 @@ def getGrimoireAdviceSection() -> AdviceSection:
     #Generate Alert Advice
 
     #Generate AdviceGroups
-    grimoire_AdviceGroupDict = {}
-    grimoire_AdviceGroupDict['Tiers'], overall_SectionTier, max_tier, true_max = getProgressionTiersAdviceGroup()
+    grimoire_AdviceGroupDict, overall_SectionTier, max_tier, true_max = getProgressionTiersAdviceGroup(grimoire)
     grimoire_AdviceGroupDict['Currencies'] = getGrimoireCurrenciesAdviceGroup(grimoire)
     grimoire_AdviceGroupDict['Upgrades'] = getGrimoireUpgradesAdviceGroup(grimoire)
 
@@ -259,11 +206,12 @@ def getGrimoireAdviceSection() -> AdviceSection:
         name='The Grimoire',
         tier=tier_section,
         pinchy_rating=overall_SectionTier,
-        header='Death Bringer and Grimoire Information',  #tier met: {tier_section}{break_you_best if overall_SectionTier >= max_tier else ''}",
+        max_tier=max_tier,
+        true_max_tier=true_max,
+        header=f"Best Grimoire tier met: {tier_section}{break_you_best if overall_SectionTier >= max_tier else ''}",
         picture='customized/Wraith.gif',
         groups=grimoire_AdviceGroupDict.values(),
         completed=None,
-        unrated=True,
     )
 
     return grimoire_AdviceSection

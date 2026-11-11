@@ -1,5 +1,9 @@
-from consts.consts_w3 import dreams_that_unlock_new_bonuses, library_subgroup_tiers, old_library_subgroup_tiers, max_trapping_critter_types
+from consts.consts_general import gstack_unique_expected
+from consts.consts_w3 import library_subgroup_tiers, old_library_subgroup_tiers, max_trapping_critter_types
+from consts.w3.equinox import equinox_unlock_dreams
 from consts.consts_w4 import max_meal_plate_level, cooking_close_enough
+from consts.w4.breeding import shiny_bonus_names, shiny_bonus_tier
+from consts.consts_w5 import max_sailing_artifact_level, sailing_artifacts_list
 from utils.logging import get_logger
 logger = get_logger(__name__)
 
@@ -39,11 +43,11 @@ combatLevels_progressionTiers = [
     [31, 4000, '{{Advice Fish|#advice-fish}} - Unlock \"Advice On Life And Death\"', None, None, None],
     [32, 4300, '{{Advice Fish|#advice-fish}} - Unlock \"Advice On Being Tired\"', None, None, None],
     [32, 4600, '{{Advice Fish|#advice-fish}} - Unlock \"Advice On Sleeping\"', None, None, None],
-    [33, 4855, "Unlock all Tome challenges", 500, "Credit towards Equinox Dream 23", ""],
-    [34, 5000, "Family - Sparkle Obol Slot 4", 500, "Credit towards Equinox Dream 23", ""],
-    [35, 5050, '{{Advice Fish|#advice-fish}} - Unlock \"Advice On Murder One\"', None, None, None],
-    [36, 5600, '{{Advice Fish|#advice-fish}} - Unlock \"Advice On Being Smart\"', None, None, None],
-    [37, 6250, '{{Advice Fish|#advice-fish}} - Unlock \"Advice On Materialism\"', None, None, None],
+    [33, 5000, "Family - Sparkle Obol Slot 4", 500, "Credit towards Equinox Dream 23", ""],
+    [34, 5050, '{{Advice Fish|#advice-fish}} - Unlock \"Advice On Murder One\"', None, None, None],
+    [35, 5600, '{{Advice Fish|#advice-fish}} - Unlock \"Advice On Being Smart\"', None, None, None],
+    [36, 6250, '{{Advice Fish|#advice-fish}} - Unlock \"Advice On Materialism\"', None, None, None],
+    [37, 7115, "Unlock all Tome challenges", 500, "Credit towards Equinox Dream 23", ""],
 ]
 secret_class_progressionTiers = {
     0: {},
@@ -126,7 +130,7 @@ gemShop_progressionTiers = [
         'Crystal 3D Printer': 1, 'More Sample Spaces': 6, 'Burning Bad Books': 4, 'Prayer Slots': 4,
         'Zen Cogs': 8, 'Cog Inventory Space': 20, 'Tower Building Slots': 4, 'Fluorescent Flaggies': 6,
         #World 4
-        'Royal Egg Cap': 5, 'Richelin Kitchen': 10, 'Souped Up Tube': 5, 'Pet Storage': 12, 'Fenceyard Space': 6,
+        'Royal Egg Cap': 5, 'Richelin Kitchen': 10, 'Souped Up Tube': 5, 'Mob Storage': 12, 'Fenceyard Space': 6,
         #World 5
         'Chest Sluggo': 12, 'Divinity Sparkie': 6, 'Golden Sprinkler': 4, 'Lava Sprouts': 6,
         #Caverns
@@ -144,7 +148,7 @@ greenstack_progressionTiers = {
     5: {'Required Stacks': 300},
     6: {'Required Stacks': 350},
     7: {'Required Stacks': 400},
-    8: {'Required Stacks': 440}
+    8: {"Required Stacks": len(gstack_unique_expected)},  # All expected greenstacks
 }
 achievements_progressionTiers = {
     0: {},
@@ -337,6 +341,175 @@ tesseract_progressionTiers = {
             'Drop Rate Crossfire': 80, 'Endless Reductions': 48, 'Universe Talent': 5, 'Beyond All Limits': 6
         },
         'Highest Map': {'World': 6, 'Map Name': 'Yolkrock Basin'},
+    },
+}
+
+grimoire_progressionTiers = {
+    0: {},
+    1: {
+        'Total Upgrades': 100,
+        'Specific Upgrades': {'Ribbon Shelf': 1, 'Ribbon Winning': 5},
+        'Stacks': {},
+    },
+    2: {
+        'Total Upgrades': 380,
+        'Specific Upgrades': {'Ribbon Winning': 15, 'Pure Opals': 5, 'Sacrifice of Harvest': 20},
+        'Stacks': {'Knockout': 6},  #Target: Carrotman
+    },
+    3: {
+        'Total Upgrades': 900,
+        'Specific Upgrades': {'Ribbon Winning': 20, 'Pure Opals': 10, 'Sacrifice of Harvest': 40, 'Grey Tome Book': 5},
+        'Stacks': {'Knockout': 16, 'Elimination': 16},  #Target: Sand Castle
+    },
+    4: {
+        'Total Upgrades': 1900,
+        'Specific Upgrades': {
+            'Ribbon Winning': 30, 'Pure Opals': 15, 'Sacrifice of Harvest': 70, 'Grey Tome Book': 30, 'Supreme Head Chef Status': 10
+        },
+        'Stacks': {'Knockout': 20, 'Elimination': 20},  #Target: Mashed Potato
+    },
+    5: {
+        'Total Upgrades': 3150,
+        'Specific Upgrades': {
+            'Ribbon Winning': 35, 'Pure Opals': 20, 'Sacrifice of Harvest': 120, 'Grey Tome Book': 50, 'Supreme Head Chef Status': 20,
+            'Villager Extraciricular': 30, 'Talents for Me, not for Thee': 10
+        },
+        'Stacks': {'Knockout': 25, 'Elimination': 25, 'Annihilation': 25},  #Target: Sheepie
+    },
+    6: {
+        'Total Upgrades': 4100,
+        'Specific Upgrades': {
+            'Ribbon Winning': 50, 'Pure Opals': 25, 'Sacrifice of Harvest': 150, 'Grey Tome Book': 70,
+            'Villager Extraciricular': 40, 'Talents for Me, not for Thee': 40, 'Writhing Grimoire': 10
+        },
+        'Stacks': {'Knockout': 31, 'Elimination': 31, 'Annihilation': 31},  #Target: Penguins
+    },
+    7: {
+        'Total Upgrades': 4600,
+        'Specific Upgrades': {
+            'Sacrifice of Harvest': 210, 'Grey Tome Book': 90, 'Villager Extraciricular': 60,
+            'Talents for Me, not for Thee': 60, 'Writhing Grimoire': 18, 'Skull of Major Talent': 30
+        },
+        'Stacks': {'Knockout': 37, 'Elimination': 37, 'Annihilation': 37},  #Target: Dedotated Rams
+    },
+    8: {
+        'Total Upgrades': 5850,
+        'Specific Upgrades': {
+            'Sacrifice of Harvest': 250, 'Grey Tome Book': 100, 'Villager Extraciricular': 80, 'Talents for Me, not for Thee': 70,
+            'Writhing Grimoire': 25, 'Skull of Major Droprate': 50, 'Ok fine, Talents for Thee too': 40
+        },
+        'Stacks': {'Knockout': 48, 'Elimination': 48, 'Annihilation': 48},  #Target: Octodar
+    },
+    9: {
+        'Total Upgrades': 7500,
+        'Specific Upgrades': {
+            'Sacrifice of Harvest': 300, 'Grey Tome Book': 110, 'Villager Extraciricular': 100, 'Talents for Me, not for Thee': 120,
+            'Writhing Grimoire': 40, 'Skull of Major Droprate': 100, 'Ok fine, Talents for Thee too': 60, 'Death of the Atom Price': 70
+        },
+        'Stacks': {'Knockout': 63, 'Elimination': 63, 'Annihilation': 63},  #Target: Tremor Wurms
+    },
+    10: {
+        'Total Upgrades': 11000,
+        'Specific Upgrades': {
+            'Sacrifice of Harvest': 500, 'Grey Tome Book': 150, 'Villager Extraciricular': 170, 'Talents for Me, not for Thee': 200,
+            'Writhing Grimoire': 50, 'Skull of Major Droprate': 270, 'Ok fine, Talents for Thee too': 130, 'Death of the Atom Price': 120
+        },
+        'Stacks': {'Knockout': 78, 'Elimination': 78, 'Annihilation': 78},  #Target: Samurai Guardians
+    },
+}
+compass_progressionTiers = {
+    0: {},
+    1: {
+        'Specific Upgrades': {'Pathfinder': 1, 'Worldfinder': 1},
+        'Abominations': 0,
+        'Medallions': 0,
+    },
+    2: {
+        'Specific Upgrades': {
+            'Elemental Path': 4, 'Fighter Path': 2, 'Survival Path': 3,
+            'Weapon Drop': 1, 'Elemental Vision': 1, 'Stone Drop': 1, 'Medallion Collection': 1,
+        },
+        'Abominations': 6,  #W1 cleared
+        'Medallions': 10,
+    },
+    3: {
+        'Specific Upgrades': {
+            'Elemental Path': 7, 'Fighter Path': 6, 'Survival Path': 8, 'Nomadic Path': 4,
+            'Ring Drop': 1, 'Exalted Stamps': 1,
+        },
+        'Abominations': 13,  #W2 cleared
+        'Medallions': 24,
+    },
+    4: {
+        'Specific Upgrades': {
+            'Elemental Path': 15, 'Fighter Path': 13, 'Survival Path': 13, 'Nomadic Path': 8,
+            'Magnesium Atom': 1,
+            'Exalted Stamps': 3, 'Medallion Magnate': 2,
+        },
+        'Abominations': 19,  #W3 cleared
+        'Medallions': 39,
+    },
+    5: {
+        'Specific Upgrades': {
+            'Elemental Path': 20, 'Fighter Path': 22, 'Survival Path': 18, 'Nomadic Path': 20,
+            'Exalted Stamps': 6, 'Medallion Magnate': 4,
+            'Moon of Damage': 120, 'Opa Opa Opa!': 8,
+        },
+        'Abominations': 25,  #W4 cleared
+        'Medallions': 50,
+    },
+    6: {
+        'Specific Upgrades': {
+            'Elemental Path': 24, 'Fighter Path': 31, 'Survival Path': 26, 'Nomadic Path': 38,
+            'Aluminium Atom': 1,
+            'Exalted Stamps': 8, 'Medallion Magnate': 6, 'Opa Opa Opa!': 16,
+            'Moon of Damage': 220, 'Novadust Discovery': 25,
+            'Atomic Cost Crash': 55, 'Atomic Potential': 12,
+        },
+        'Abominations': 28,
+        'Medallions': 57,
+    },
+    7: {
+        'Specific Upgrades': {
+            'Exalted Stamps': 10, 'Medallion Magnate': 8, 'Opa Opa Opa!': 25, 'Atomic Potential': 20,
+            'Abomination Slayer XVII': 3, 'Abomination Slayer XXI': 9, 'Abomination Slayer XXVII': 90,
+            'Moon of Damage': 300, 'Novadust Discovery': 50, 'Talented Masters': 85,
+            'Atomic Cost Crash': 95, 'Monument Homage': 30,
+        },
+        'Abominations': 30,
+        'Medallions': 64,
+    },
+    8: {
+        'Specific Upgrades': {
+            'Exalted Stamps': 13, 'Medallion Magnate': 10,
+            'Abomination Slayer XVII': 4, 'Abomination Slayer XXI': 10, 'Abomination Slayer XXVII': 95,
+            'Moon of Damage': 320, 'Novadust Discovery': 72, 'Talented Masters': 150,
+            'Atomic Cost Crash': 135, 'Monument Homage': 60,
+            'Moon of Sleep': 25, 'Circle Supremacy': 8, 'Mastery Destruction': 5,
+        },
+        'Abominations': 32,
+        'Medallions': 84,
+    },
+    9: {
+        'Specific Upgrades': {
+            'Exalted Stamps': 15, 'Medallion Magnate': 12,
+            'Abomination Slayer XVII': 8, 'Abomination Slayer XXI': 18, 'Abomination Slayer XXVII': 240,
+            'Moon of Damage': 550, 'Novadust Discovery': 130, 'Talented Masters': 185,
+            'Atomic Cost Crash': 165, 'Monument Homage': 90,
+            'Moon of Sleep': 33, 'Circle Supremacy': 11, 'Mastery Destruction': 14,
+        },
+        'Abominations': 35,  #All abominations slain
+        'Medallions': 104,
+    },
+    10: {
+        'Specific Upgrades': {
+            'Exalted Stamps': 16, 'Medallion Magnate': 14,
+            'Abomination Slayer XVII': 12, 'Abomination Slayer XXI': 24, 'Abomination Slayer XXVII': 320,
+            'Moon of Damage': 700, 'Novadust Discovery': 170, 'Talented Masters': 200,
+            'Atomic Cost Crash': 185, 'Monument Homage': 105,
+            'Moon of Sleep': 38, 'Circle Supremacy': 13, 'Mastery Destruction': 20,
+        },
+        'Medallions': 121,  #131 obtainable, less slack for event-gated ones
     },
 }
 
@@ -712,12 +885,63 @@ vault_progressionTiers = {
         ]  #This list generated from Acecow's alt account when they first entered World 6 and may need to be adjusted in the future
     },
     3: {
+        'Max Index': 61,  #Mastery III section handled by tiers 4+
         'Exclude': [
-            'Bullseye', 'Wicked Smart', 'Kitchen Dream-mare', 'Teh TOM', 'Cooking Knowledge',  #Too Expensive
+            'Bullseye', 'Wicked Smart', 'Kitchen Dream-mare', 'Teh TOM', 'Cooking Knowledge',  #Too expensive to max, tiered by level in 4+
             'Beeg Forge',  #Having too large of Ore capacity can be annoying. Not maxing this is one way player's have chosen to keep capacity down
             'Card Retirement'  #Passive cards cannot be doubled. I don't care, but some people like the option
-        ]  #You're probably going to regret doing an exclude after Vault3 gets added, RIP
-    }
+        ]
+    },
+    #Tiers 4-7: Mastery III section + tier 3's too-expensive excludes.
+    #Budget per tier = Raw Damage at lv 50/100/150/200, everything else cost-matched to that
+    4: {
+        'Levels': {
+            'Wicked Smart': 278, 'Bullseye': 359, 'Kitchen Dream-mare': 215, 'Teh TOM': 170, 'Cooking Knowledge': 273,
+            'Speedy Sailing': 100, 'Artifact Find Chance': 176, 'Skulltrick': 100, 'Go Go Bubba the Seal': 149,
+            'Ocean Knowledge': 100, 'Sailing Loot': 132, 'Mega Bits': 144, 'Gamer Knowledge': 100,
+            'Collection Cashout': 20, 'Divinity Points': 93, 'Divine Knowledge': 87, 'Smarter Villagers': 24,
+            'Super Slab': 10, 'Better Captains': 82, 'Big Blessings': 20, 'Farming Knowledge': 81,
+            'Croppius Evolvius': 105, 'Properly Funded Research': 7, 'Raw Damage': 50, 'Finders Keepers': 91,
+            'Sneaking Knowledge': 66, 'White Essentials': 85, 'Summoning Knowledge': 54, 'Bigger Better Beans': 15,
+            '24 Karat Foods': 8, 'Rest of the Essentials': 39, 'Topheavy Charms': 16, 'Vault Mastery III': 4,
+        }
+    },
+    5: {
+        'Levels': {
+            'Wicked Smart': 387, 'Bullseye': 500, 'Kitchen Dream-mare': 327, 'Teh TOM': 261, 'Cooking Knowledge': 428,
+            'Speedy Sailing': 100, 'Artifact Find Chance': 250, 'Skulltrick': 100, 'Go Go Bubba the Seal': 247,
+            'Ocean Knowledge': 100, 'Sailing Loot': 200, 'Mega Bits': 246, 'Gamer Knowledge': 100,
+            'Collection Cashout': 20, 'Divinity Points': 100, 'Divine Knowledge': 100, 'Smarter Villagers': 41,
+            'Super Slab': 18, 'Better Captains': 100, 'Big Blessings': 30, 'Farming Knowledge': 100,
+            'Croppius Evolvius': 203, 'Properly Funded Research': 10, 'Raw Damage': 100, 'Finders Keepers': 193,
+            'Sneaking Knowledge': 100, 'White Essentials': 196, 'Summoning Knowledge': 100, 'Bigger Better Beans': 37,
+            '24 Karat Foods': 22, 'Rest of the Essentials': 150, 'Topheavy Charms': 93, 'Vault Mastery III': 21,
+        }
+    },
+    6: {
+        'Levels': {
+            'Wicked Smart': 497, 'Bullseye': 500, 'Kitchen Dream-mare': 438, 'Teh TOM': 352, 'Cooking Knowledge': 500,
+            'Speedy Sailing': 100, 'Artifact Find Chance': 250, 'Skulltrick': 100, 'Go Go Bubba the Seal': 345,
+            'Ocean Knowledge': 100, 'Sailing Loot': 200, 'Mega Bits': 300, 'Gamer Knowledge': 100,
+            'Collection Cashout': 20, 'Divinity Points': 100, 'Divine Knowledge': 100, 'Smarter Villagers': 50,
+            'Super Slab': 20, 'Better Captains': 100, 'Big Blessings': 30, 'Farming Knowledge': 100,
+            'Croppius Evolvius': 250, 'Properly Funded Research': 10, 'Raw Damage': 150, 'Finders Keepers': 250,
+            'Sneaking Knowledge': 100, 'White Essentials': 200, 'Summoning Knowledge': 100, 'Bigger Better Beans': 50,
+            '24 Karat Foods': 37, 'Rest of the Essentials': 200, 'Topheavy Charms': 100, 'Vault Mastery III': 38,
+        }
+    },
+    7: {
+        'Levels': {
+            'Wicked Smart': 500, 'Bullseye': 500, 'Kitchen Dream-mare': 500, 'Teh TOM': 443, 'Cooking Knowledge': 500,
+            'Speedy Sailing': 100, 'Artifact Find Chance': 250, 'Skulltrick': 100, 'Go Go Bubba the Seal': 443,
+            'Ocean Knowledge': 100, 'Sailing Loot': 200, 'Mega Bits': 300, 'Gamer Knowledge': 100,
+            'Collection Cashout': 20, 'Divinity Points': 100, 'Divine Knowledge': 100, 'Smarter Villagers': 50,
+            'Super Slab': 20, 'Better Captains': 100, 'Big Blessings': 30, 'Farming Knowledge': 100,
+            'Croppius Evolvius': 250, 'Properly Funded Research': 10, 'Raw Damage': 200, 'Finders Keepers': 250,
+            'Sneaking Knowledge': 100, 'White Essentials': 200, 'Summoning Knowledge': 100, 'Bigger Better Beans': 50,
+            '24 Karat Foods': 50, 'Rest of the Essentials': 200, 'Topheavy Charms': 100, 'Vault Mastery III': 50,
+        }
+    },
 }
 
 ###WORLD 2 PROGRESSION TIERS###
@@ -1330,8 +1554,8 @@ deathNote_progressionTiers = [
     [22, 20, 20, 20, 20, 20, 20,    0, 0,   80, 80, 80, 80, ""],
     [23, 20, 20, 20, 20, 20, 20,    0, 0,   84, 84, 83, 82, ""],
     [24, 20, 20, 20, 20, 20, 20,    0, 0,   86, 86, 86, 85, ""],
-    [25, 20, 20, 20, 20, 20, 20,   20, 0,  106, 106, 106, 106, ""], # Add W7 mob to zow, chow, meow, wow + skull tier
-    [26, 20, 20, 20, 20, 20, 20,   20, 0,  108, 108, 108, 108, ""]  # Max zow, chow, meow, wow
+    [25, 20, 20, 20, 20, 20, 20,   20, 0,  108, 108, 108, 108, ""], # Add W7 mob to zow, chow, meow, wow + skull tier
+    [26, 20, 20, 20, 20, 20, 20,   20, 0,  110, 110, 110, 110, ""]  # Max zow, chow, meow, wow
 ]
 buildingsPostBuffs_progressionTiers = [
     [0, "Unlock", [], "", ""],
@@ -1385,7 +1609,7 @@ prayers_progressionTiers = {
 equinox_progressionTiers = {
     'Recommended': [
         'Equinox Symbols', 'Equinox Resources', 'Metal Detector', 'Slow Roast Wiz',
-        'Liquidvestment', 'Faux Jewels', 'Matching Scims', 'Equinox Dreams', 'Voter Rights'
+        'Liquidvestment', 'Faux Jewels', 'Matching Scims', 'Equinox Dreams', 'Voter Rights', 'Nonstop Studies'
     ],
     'Optional': [
         'Shades of K', 'Laboratory Fuse', 'Food Lust'
@@ -1595,7 +1819,7 @@ breeding_progressionTiers = {
         "TerritoriesUnlocked": 24,
         "ArenaWaves": 200,
         "Shinies": {
-            "Faster Shiny Pet Lv Up Rate": [24, 6],
+            "Faster Shiny Mob Lv Up Rate": [24, 6],
             "Bonuses from All Meals": [10, 5],
             "Infinite Star Signs": [25, 5],
             "Base Efficiency for All Skills": [20, 5],
@@ -1607,7 +1831,7 @@ breeding_progressionTiers = {
         "TerritoriesUnlocked": 24,
         "ArenaWaves": 200,
         "Shinies": {
-            "Base Critter Per Trap": [10, 5],
+            "Base Critters per Trap": [10, 5],
             "Drop Rate": [15, 5],
             "Faster Refinery Speed": [15, 5],
             "Lower Minimum Travel Time for Sailing": [5, 5],
@@ -1621,9 +1845,9 @@ breeding_progressionTiers = {
         "Shinies": {
             "Multikill Per Tier": [20, 5],
             "Higher Artifact Find Chance": [15, 5],
-            "Faster Shiny Pet Lv Up Rate": [28, 7],
+            "Faster Shiny Mob Lv Up Rate": [28, 7],
             "Infinite Star Signs": [37, 7],
-            "Summoning EXP": [10, 5]
+            "Summoning EXP gain": [10, 5]
             },
         "ShinyNotes": ""
         },
@@ -1643,7 +1867,7 @@ breeding_progressionTiers = {
         "ArenaWaves": 200,
         "Shinies": {
             "Drop Rate": [36, 12],
-            "Base Critter Per Trap": [22, 11],
+            "Base Critters per Trap": [22, 11],
             },
         "ShinyNotes": ""
     },
@@ -1652,7 +1876,7 @@ breeding_progressionTiers = {
         "TerritoriesUnlocked": 24,
         "ArenaWaves": 200,
         "Shinies": {
-            "Summoning EXP": [22, 11],
+            "Summoning EXP gain": [22, 11],
             "Faster Refinery Speed": [33, 11],
             "Multikill Per Tier": [44, 11],
         },
@@ -1667,25 +1891,49 @@ breeding_progressionTiers = {
         },
         "ShinyNotes": ""
     },
+    # Base Max Shiny LV tiers are a free pass once Menagerie raises it
     13: {
-        'Max Shinies': [
-            'Bonuses from All Meals', 'Drop Rate', 'Summoning EXP',
-            'Base Efficiency for All Skills', 'Multikill Per Tier', 'Faster Refinery Speed'
-        ]
+        'Max Shinies': shiny_bonus_tier['Important'],
+        'Max Shiny Level': 20,
     },
     14: {
-        'Max Shinies': [
-            'Farming EXP', 'Lower Minimum Travel Time for Sailing', 'Sail Captain EXP Gain',
-            'Higher Artifact Find Chance', 'Skill EXP', 'Base Critter Per Trap'
-        ]
+        'Max Shinies': shiny_bonus_tier['Useful'],
+        'Max Shiny Level': 20,
     },
     15: {
-        'Max Shinies': [
-            'Faster Shiny Pet Lv Up Rate', 'Base WIS', 'Base STR', 'Base AGI', 'Base LUK',
-            'Infinite Star Signs', 'Total Damage',
-            'Tab 4 Talent Pts', 'Tab 3 Talent Pts', 'Tab 2 Talent Pts', 'Tab 1 Talent Pts',
-            'Class EXP', 'Line Width in Lab'
-        ]
+        'Max Shinies': shiny_bonus_tier['Other'],
+        'Max Shiny Level': 20,
+    },
+    # Max Shiny LV 30 needs Luminous Menagerie Unlock 11. Every Shiny LV above 20 on
+    # any pet is +1 OverLV (+10% additive Shiny LV Up Rate), so first level all pets
+    # evenly while that's cheap
+    16: {
+        'Max Shinies': shiny_bonus_names,
+        'Max Shiny Level': 21,
+    },
+    17: {
+        'Max Shinies': shiny_bonus_names,
+        'Max Shiny Level': 22,
+    },
+    18: {
+        'Max Shinies': shiny_bonus_names,
+        'Max Shiny Level': 23,
+    },
+    19: {
+        'Max Shinies': shiny_bonus_tier['Important'],
+        'Max Shiny Level': 25,
+    },
+    20: {
+        'Max Shinies': shiny_bonus_tier['Important'],
+        'Max Shiny Level': 30,
+    },
+    21: {
+        'Max Shinies': shiny_bonus_tier['Useful'],
+        'Max Shiny Level': 30,
+    },
+    22: {
+        'Max Shinies': shiny_bonus_tier['Other'],
+        'Max Shiny Level': 30,
     },
 
     }
@@ -1736,6 +1984,17 @@ divinity_progressionTiers = {
     11: {"MaxDivLevel": 50},
     12: {"MinDivLevel": 40}
 }
+# Artifacts worth taking past Sovereign. Left out: Giants Eye and Dreamcatcher (worthless),
+# Silver Ankh, Billcye Tri and Cloud Urn (Post Office box chance barely grows after Sovereign)
+sailing_important_artifacts = [
+    'Moai Head', 'Maneki Kat', 'Ruble Cuble', 'Fauxory Tusk', 'Gold Relic', 'Genie Lamp',
+    'Emerald Relic', 'Fun Hippoete', 'Arrowhead', '10 AD Tablet', 'Ashen Urn', 'Amberite',
+    'Triagulon', 'Frost Relic', 'Chilled Yarn', 'Causticolumn', 'Jade Rock', 'Gummy Orb',
+    'Fury Relic', 'Weatherbook', 'Crystal Steak', 'Trilobite Rock', 'Opera Mask', 'Socrates',
+    'The True Lantern', 'The Onyx Lantern', 'The Shim Lantern', 'The Winz Lantern',
+    'Deathskull', 'Obsidian', 'Pointagon', 'Ender Pearl',
+    'Fang of the Gods', 'Nomenclature', 'Me First Dollar', 'Bloodclot',
+]
 sailing_progressionTiers = {
     0: {},
     1: {
@@ -1757,7 +2016,7 @@ sailing_progressionTiers = {
     },
     3: {
         'Islands Discovered': 5,
-        'Captain And Boats': 9,
+        'Captains And Boats': 9,
         'Artifacts': {
             'Maneki Kat': 1,
             'Ruble Cuble': 1,
@@ -1771,7 +2030,7 @@ sailing_progressionTiers = {
     },
     4: {
         'Islands Discovered': 6,
-        'Captain And Boats': 10,
+        'Captains And Boats': 10,
         'Artifacts': {
             'Amberite': 2,
             'Gold Relic': 2,
@@ -1779,14 +2038,14 @@ sailing_progressionTiers = {
     },
     5: {
         'Islands Discovered': 7,
-        'Captain And Boats': 11,
+        'Captains And Boats': 11,
         'Artifacts': {
             'Jade Rock': 2,
         }
     },
     6: {
         'Islands Discovered': 8,
-        'Captain And Boats': 12,
+        'Captains And Boats': 12,
         'Artifacts': {
             'Triagulon': 1,
             'Billcye Tri': 1,
@@ -1799,28 +2058,28 @@ sailing_progressionTiers = {
     },
     7: {
         'Islands Discovered': 9,
-        'Captain And Boats': 13,
+        'Captains And Boats': 13,
         'Artifacts': {
             'Fury Relic': 2,
         },
     },
     8: {
         'Islands Discovered': 12,
-        'Captain And Boats': 15,
+        'Captains And Boats': 15,
         'Artifacts': {
             'Crystal Steak': 2,
         }
     },
     9: {
         'Islands Discovered': 14,
-        'Captain And Boats': 17,
+        'Captains And Boats': 17,
         'Artifacts': {
             'Socrates': 2,
         }
     },
     10: {
         'Islands Discovered': 15,
-        'Captain And Boats': 19,
+        'Captains And Boats': 19,
         'Artifacts': {
             'Cloud Urn': 1,
             'Weatherbook': 1,
@@ -1829,13 +2088,13 @@ sailing_progressionTiers = {
         }
     },
     11: {
-        'Captain And Boats': 20,
+        'Captains And Boats': 20,
         'Artifacts': {
             'Fauxory Tusk': 3,
             '10 AD Tablet': 3,
             'Fury Relic': 3
         },
-        'Eldritch': True
+        'Artifact Tier': 3
     },
     12: {
         'Artifacts': {
@@ -1908,7 +2167,7 @@ sailing_progressionTiers = {
             'Gold Relic': 4,
             'Amberite': 4
         },
-        'Sovereign': True
+        'Artifact Tier': 4
     },
     17: {
         'Artifacts': {
@@ -1956,11 +2215,37 @@ sailing_progressionTiers = {
     },
     19: {
         'Artifacts': {
-            #These last 2 are worthless, but get them anyway.
-            'Giants Eye': 4,
-            'Dreamcatcher': 4,
+            # World's End and The Maw artifacts, catching up to the rest
+            'Deathskull': 4,
+            'Obsidian': 4,
+            'Pointagon': 4,
+            'Ender Pearl': 4,
+            'Fang of the Gods': 4,
+            'Nomenclature': 4,
+            'Me First Dollar': 4,
+            'Bloodclot': 4,
         },
-    }
+    },
+    20: {
+        'Artifacts': {name: 5 for name in sailing_important_artifacts},
+        'Artifact Tier': 5
+    },
+    21: {
+        'Artifacts': {name: 6 for name in sailing_important_artifacts},
+        'Artifact Tier': 6
+    },
+    22: {
+        'Artifacts': {name: 7 for name in sailing_important_artifacts},
+        'Artifact Tier': 7
+    },
+    23: {
+        # Optional: the rest of the artifacts to max tier, the important ones are done in 22
+        'Artifacts': {
+            name: max_sailing_artifact_level
+            for name in sailing_artifacts_list
+            if name not in sailing_important_artifacts
+        },
+    },
 }
 gaming_progressionTiers = {
     0: {}
@@ -2299,8 +2584,8 @@ true_max_tiers = {
     'Secret Class Path': max(secret_class_progressionTiers.keys()),
 
     # Master Classes
-    'Grimoire': 0,
-    'Compass': 0,
+    'The Grimoire': max(grimoire_progressionTiers.keys()),
+    'Compass': max(compass_progressionTiers.keys()),
     'The Tesseract': max(tesseract_progressionTiers.keys()),
     'Royal Armory': 0,
 
@@ -2329,7 +2614,7 @@ true_max_tiers = {
     'Atom Collider': max(atoms_progressionTiers.keys()),
     'Buildings': 0,
     'Death Note': deathNote_progressionTiers[-1][0],
-    'Equinox': len(dreams_that_unlock_new_bonuses) + 1,
+    'Equinox': len(equinox_unlock_dreams) + 1,
     'Library': len(library_subgroup_tiers),
     'Library Characters': len(old_library_subgroup_tiers),
     'Refinery': 1,  #Pass or Fail

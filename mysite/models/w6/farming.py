@@ -1,10 +1,13 @@
-from math import floor, ceil
+from math import ceil, floor
 from functools import cached_property
 
-from consts.consts_autoreview import ValueToMulti, EmojiType
+from consts.consts_autoreview import MultiToValue, ValueToMulti, EmojiType
 from consts.general.common import percent_break_point
+from consts.general.talents import dank_rank_talent_index, mass_irrigation_talent_index
 from consts.idleon.lava_func import lava_func
 from consts.idleon.w6.farming import (
+    crop_evo_sticker_index,
+    sticker_bonus_per_count,
     market_info,
     exotic_market_info,
     crop_depot_list,
@@ -12,18 +15,34 @@ from consts.idleon.w6.farming import (
     seed_dict,
 )
 from consts.w6.farming import (
-    max_land_rank_level,
     max_farming_crops,
     crop_dict,
     max_farming_value,
+    crop_evo_breakpoint_list,
 )
 
 from models.advice.advice import Advice
+from models.caverns.caves.the_lamp import LampWish
+from models.general.achievements import Achievements
+from models.master_classes.grimoire import Grimoire
+from models.w1.star_signs import StarSigns
+from models.w1.upgrade_vault import Vault
+from models.w2.ballot import Ballot, BallotBuff
+from models.w2.killroy import SkullShop
+from models.w4.cooking import Meals
+from models.w4.lab import LabBonus, LabJewel
+from models.w4.rift import RiftBonus
 from models.w6.sneaking import Emporium
 
 from utils.number_formatting import parse_number, round_and_trim
-from utils.safer_data_handling import safe_loads, safer_index, safer_math_pow
+from utils.safer_data_handling import (
+    safe_loads,
+    safer_convert,
+    safer_index,
+    safer_math_pow,
+)
 from utils.text_formatting import pl
+from utils.all_talentsDict import all_talentsDict
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -120,15 +139,17 @@ class Crops(dict[int, float]):
         )
 
     def evo_chance(self, crop_index: int) -> float:
-        # "NextCropChance" in source. Last update v2.48 Giftmas Event
+        # "NextCropChance" in source. Last updated in v2.550
         seed_name, seed_num = self._get_seed_index(crop_index)
         try:
             info = seed_dict[seed_name]
             if crop_index == info["CropIndexStart"]:
                 # First crop of seed always available
                 return 1
-            return info["EvoBase"] * safer_math_pow(
-                info["EvoCoefficient"], seed_num - 1
+            # `_GenINFO[68]` in source holds the Basic base chance for every seed.
+            # The exponent is the stage of the crop evolving into this one.
+            return seed_dict["Basic"]["EvoBase"] * safer_math_pow(
+                info["EvoCoefficient"], seed_num - 2
             )
         except:
             logger.exception(
@@ -165,70 +186,73 @@ class Depot:
         self._require_emporium = info["EmporiumUnlockName"]
         self.unlocked = False
 
+    def _get_bonus_count(self, crop_count: int) -> int:
+        # "CropSCbonus" in source. Last updated in v2.550
+        match self.name:
+            case "Highlighter":
+                return max(0, crop_count - 100)
+            case "Fancy Pen":
+                return max(0, crop_count - 200)
+            case "Chalk":
+                return max(0, (crop_count - 200) // 10)
+            case _:
+                return crop_count
+
+    def _get_potential_value(self, bonus_count: int, multi: float) -> float:
+        return (
+            lava_func(self._scaling_type, bonus_count, self._scaling_coefficient, 0)
+            * multi
+        )
+
     def calculate_bonus(
         self, multi: float, crop_count: int, emporium: dict[str, Emporium]
     ):
         self.unlocked = emporium[self._require_emporium].obtained
-        if self.name == "Highlighter":
-            bonus_count = max(0, crop_count - 100)
-            max_bonus_count = max_farming_crops - 100
-        elif self.name == "Fancy Pen":
-            bonus_count = max(0, crop_count - 200)
-            max_bonus_count = max_farming_crops - 200
-        else:
-            bonus_count = crop_count
-            max_bonus_count = max_farming_crops
+        bonus_count = self._get_bonus_count(crop_count)
         self._crop_count = crop_count
-        self.value = (
-            lava_func(self._scaling_type, bonus_count, self._scaling_coefficient, 0)
-            * multi
-        )
+        potential_value = self._get_potential_value(bonus_count, multi)
+        # "CropSCbonus" in source: 0 until the Emporium upgrade is owned
+        self.value = potential_value if self.unlocked else 0
+        self.value_increase = None
+        self.max_value = None
         if crop_count < max_farming_crops:
             self.value_increase = (
-                lava_func(
-                    self._scaling_type, bonus_count + 1, self._scaling_coefficient, 0
-                )
-                * multi
-                - self.value
+                self._get_potential_value(bonus_count + 1, multi) - potential_value
             )
-            self.max_value = (
-                lava_func(
-                    self._scaling_type, max_bonus_count, self._scaling_coefficient, 0
-                )
-                * multi
+        if crop_count < max_farming_crops or not self.unlocked:
+            self.max_value = self._get_potential_value(
+                self._get_bonus_count(max_farming_crops), multi
             )
-        else:
-            self.value_increase = None
-            self.max_value = None
 
     def get_bonus_advice(self, link_to_section: bool = True) -> Advice:
         label = ""
         if link_to_section:
             label += "{{ Farming Crop Depot|#farming }} - "
         label += f"{self.name}:<br>"
-        is_multi = "}" in self._template
-        progress = f"{_display_value(is_multi, self.value)}"
+        # The game shows "}" depot bonuses as the raw multi, not 1 + value/100
+        progress = f"{round_and_trim(self.value)}"
         # Show X/Y if bonus not maxed
         if self.max_value is not None:
-            progress += f"/{_display_value(is_multi, self.max_value)}"
+            progress += f"/{round_and_trim(self.max_value)}"
         label += self._template.replace("{", progress).replace("}", progress)
         if not link_to_section and self.max_value is not None:
             # Bonus not maxed and showed in section, add scaling info
             s_value = f"{self._scaling_coefficient}"
             scaling = self._template.replace("{", s_value).replace("}", s_value)
-            label += f"<br>{scaling} per crop discovered"
+            if self.name == "Chalk":
+                label += f"<br>{scaling} per 10 crops discovered above 200"
+            else:
+                label += f"<br>{scaling} per crop discovered"
             if self._scaling_type == "pow":
                 label += ", multiplicative"
                 if self.value_increase is not None:
-                    display_increase = round_and_trim(
-                        ValueToMulti(self.value_increase) - 1, 3
-                    )
+                    display_increase = round_and_trim(self.value_increase, 3)
                     label += f"<br>Next crop would increase total by {display_increase}"
             else:
                 label += ", additive"
-            if not self.unlocked:
-                label += "<br>Unlock via {{ Jade Emporium|#sneaking }}"
-        if link_to_section:
+        if not self.unlocked:
+            label += "<br>Unlock via {{ Jade Emporium|#sneaking }}"
+        elif link_to_section:
             # Bonus show not in section, add note why there is progress but bonus 0
             if self.name == "Highlighter" and self.value == 0.0:
                 label += "<br>Note: Value only increases after 100 crops found"
@@ -274,6 +298,11 @@ class MarketUpgrade:
         else:
             return self._stack_value
 
+    def add_max_level(self, bonus_levels: float):
+        # "MarketMaxLV" in source. Last updated in v2.550
+        self.max_level = floor(self.max_level + bonus_levels)
+        self.max_value = self.max_level * self._value_per_level
+
     def calculate_bonus(self, stack: dict[str, int], stack_multi: float):
         if self.name in stack:
             self._stack = stack[self.name]
@@ -308,7 +337,7 @@ class MarketUpgrade:
         )
 
     def _get_upgrade_crop_index(self):
-        # "MarketCostType" in source. Last updated v2.48 Giftmas Event
+        # "MarketCostType" in source. Last updated in v2.550
         if self.name == "Land Plots":
             return floor(
                 self._crop_index_start
@@ -323,20 +352,24 @@ class MarketUpgrade:
             return floor(self._crop_index_start + self._crop_index_scale * self.level)
 
     def _get_cost(self, cost_multi: float, to_level: int | None = None) -> float:
+        # "MarketCostQTY" in source: each level is floored after the discounts apply.
+        # Last updated in v2.550
         total_cost = 0
         if to_level is None:
             to_level = self.level + 1
         for level in range(self.level, to_level):
-            total_cost += (
-                floor(self._base_cost * safer_math_pow(self._cost_imcrement, level))
-                * cost_multi
+            level_cost = (
+                cost_multi
+                * self._base_cost
+                * safer_math_pow(self._cost_imcrement, level)
             )
-        return floor(total_cost) if 1e8 > total_cost else total_cost
+            total_cost += floor(level_cost) if 1e8 > level_cost else level_cost
+        return total_cost
 
     def get_target_bonus(
         self, target_level: int, cost_multi: float
     ) -> tuple[float | None, Advice] | None:
-        if self.level == self.max_level:
+        if self.level >= self.max_level:
             return None
         target_level = min(self.max_level, target_level)
         label = f"{self.name}:<br>"
@@ -367,18 +400,20 @@ def _get_crop_image(crop_index: int) -> str:
 
 
 class ExoticMarketUpgrade:
-    def __init__(self, level: int, info: dict):
+    def __init__(self, level: int, info: dict, is_organic: bool = False):
         self.level = level
         self.name = info["Name"]
         self._template = info["Description"]
         self._crop_index = info["CostCropIndex"]
-        self._coefficient = info["Coefficient"]
+        self._is_organic = is_organic
+        # "Spelunk"[50] in source: Organic upgrades give double
+        self._coefficient = info["Coefficient"] * (2 if is_organic else 1)
         self._scaling_type = info["ScalingType"]
         self.value = 0
         self._max_value = None
 
     def calculate_bonus(self):
-        # "ExoticBonusQTY" in source. Last update 2.48 Giftmas Event
+        # "ExoticBonusQTY" in source. Last updated in v2.550
         match self._scaling_type:
             case 1:
                 self.value = self._coefficient * self.level / (self.level + 1000)
@@ -390,6 +425,9 @@ class ExoticMarketUpgrade:
                     f"Unknown scaling type ({self._scaling_type})"
                     f" of exotic upgrade '{self.name}'"
                 )
+        if self.name == "FREEXOTIC":
+            self.value = min(50, self.value)
+            self._max_value = min(50, self._max_value)
 
     def get_bonus_advice(self, link_to_section: bool = True) -> Advice:
         label = ""
@@ -425,6 +463,8 @@ class ExoticMarketUpgrade:
             label += bonus
             progress = self.level
             goal = EmojiType.INFINITY.value
+        if self._is_organic:
+            label += "<br>Organic: bonus doubled"
         return Advice(
             label=label,
             picture_class=_get_crop_image(self._crop_index),
@@ -456,18 +496,22 @@ class LandRankUpgrade:
         self._template = info["Description"]
         self._unlock_level = info["UnlockLevel"]
         self._unlocked = info["UnlockLevel"] <= total_level
-        if index % 5 != 4:
-            self.max_level = None
-        else:
-            self.max_level = max_land_rank_level
+        # Only the 5th column has a max level, which depends on the account
+        self.max_level = None if index % 5 != 4 else 1
 
-    def calculate_bonus(self, multi: float):
+    def calculate_bonus(self, multi: float, fifth_column_max_level: int):
+        if self.max_level is not None:
+            self.max_level = fifth_column_max_level
+        self.value = self.get_value(multi)
+        self.max_value = (
+            None if self.max_level is None
+            else multi * self._base_value * self.max_level
+        )
+
+    def get_value(self, multi: float) -> float:
         if self.max_level is None:
-            self.value = multi * 1.7 * self._base_value * self.level / (self.level + 80)
-            self.max_value = None
-        else:
-            self.value = multi * self._base_value * self.level
-            self.max_value = multi * self._base_value * self.max_level
+            return multi * 1.7 * self._base_value * self.level / (self.level + 80)
+        return multi * self._base_value * self.level
 
     def get_bonus_advice(
         self, link_to_section: bool = True, level_goal: int = None
@@ -512,7 +556,7 @@ class LandRank(dict[str, LandRankUpgrade]):
 
     def get_bonus_with_land_rank_advice(self, name: str) -> list[Advice]:
         min_lr = max(self.min_level, floor(0.8 * self.max_level))
-        if self.min_level < floor(0.8 * self.min_level):
+        if self.min_level < floor(0.8 * self.max_level):
             llr_note = "80% of Max"
         else:
             llr_note = "Lowest"
@@ -550,6 +594,191 @@ class LandRank(dict[str, LandRankUpgrade]):
             return "landrank-1"
 
 
+class CropDepotMulti:
+    def __init__(self, lab: float, grimoire: float):
+        self.lab: float = lab
+        self.grimoire: float = grimoire
+        self.total: float = lab * grimoire
+
+
+class CropValueMulti:
+    def __init__(
+        self,
+        doubler: int,
+        mboost_sboost: float,
+        pboost_value: float,
+        min_plot_rank: int,
+        max_plot_rank: int,
+        ballot_value: float,
+        value_gmo: float,
+        cap: float,
+    ):
+        self.cap: float = cap
+        self.doubler: int = doubler
+        self.mboost_sboost: float = mboost_sboost
+        self.pboost_ballot_min: float = ValueToMulti(
+            pboost_value * min_plot_rank + ballot_value
+        )
+        self.pboost_ballot_max: float = ValueToMulti(
+            pboost_value * max_plot_rank + ballot_value
+        )
+        self.value_gmo: float = value_gmo
+        self.before_cap_min: int = round(
+            max(1, doubler) * mboost_sboost * self.pboost_ballot_min * value_gmo
+        )
+        self.before_cap_max: int = round(
+            max(1, doubler) * mboost_sboost * self.pboost_ballot_max * value_gmo
+        )
+        self.final_min: float = min(cap, self.before_cap_min)
+
+
+class CropEvoMulti:
+    def __init__(
+        self,
+        maps_opened: int,
+        cropius_mapper_value: float,
+        crop_chapter_value: float,
+        tome_score: int,
+        vial_value: float,
+        stamp_value: float,
+        meals: Meals,
+        markets: float,
+        land_rank: float,
+        star_signs: StarSigns,
+        farming_levels: list[int],
+        skill_mastery_unlocked: bool,
+        lil_overgrowth: bool,
+        skull_shop: float,
+        wish_value: float,
+        summoning: float,
+        *,
+        exotic: float,
+        mass_irrigation: float,
+        grimoire_vault: float,
+        monument_value: float,
+        w7_sources: float,
+    ):
+        self.maps_opened: int = maps_opened
+        self.cropius_value: float = maps_opened * cropius_mapper_value
+        self.crop_chapter_value: float = crop_chapter_value
+        self.vial_value: float = vial_value
+        self.tome_score = tome_score
+        self.crop_chapter_stacks = max(0, (tome_score - 5000) // 2000)
+        self.alchemy: float = (
+            ValueToMulti(self.cropius_value)
+            * ValueToMulti(
+                crop_chapter_value * max(0, floor((tome_score - 5000) / 2000))
+            )
+            * ValueToMulti(vial_value)
+        )
+        self.stamp: float = ValueToMulti(stamp_value)
+        self.nyan_stacks: int = meals.nyan_stacks
+        self.meals: float = ValueToMulti(meals['Bill Jack Pep'].value) * ValueToMulti(
+            meals.nyanborgir_value
+        )
+        self.markets: float = markets
+        self.land_rank: float = land_rank
+        self.starsign_value: float = (
+            3
+            * star_signs["Cropiovo Minor"].unlocked
+            * max(farming_levels, default=0)
+            * star_signs.silkrode_multi
+            * star_signs.seraph_multi
+        )
+        self.starsign: float = ValueToMulti(self.starsign_value)
+        self.total_farming_levels: int = sum(farming_levels)
+        # "RiftSkillBonus,15" rank above 1 in source: 200+ total Farming levels.
+        # Last updated in v2.550
+        self.skill_mastery_active: bool = (
+            skill_mastery_unlocked and self.total_farming_levels >= 200
+        )
+        self.misc: float = (
+            ValueToMulti(5 * lil_overgrowth)
+            * skull_shop
+            * ValueToMulti(15 * self.skill_mastery_active * skill_mastery_unlocked)
+        )
+        self.wish: float = ValueToMulti(wish_value)
+        self.exotic: float = exotic
+        self.mass_irrigation: float = mass_irrigation
+        self.grimoire_vault: float = grimoire_vault
+        self.monument: float = ValueToMulti(monument_value)
+        self.w7_sources: float = w7_sources
+        # "NextCropChance" in source. Last updated in v2.550
+        self.total: float = (
+            self.alchemy
+            * self.stamp
+            * self.meals
+            * self.markets
+            * self.land_rank
+            * summoning
+            * self.starsign
+            * self.misc
+            * self.wish
+            * exotic
+            * mass_irrigation
+            * grimoire_vault
+            * self.monument
+            * w7_sources
+        )
+
+
+class CropSpeedMulti:
+    def __init__(
+        self,
+        vial_value: float,
+        nutritious_soil_value: float,
+        night_market: float,
+        summoning: float,
+        gogogrow_value: float,
+    ):
+        self.vial_value: float = vial_value
+        self.vial_market: float = ValueToMulti(
+            vial_value + nutritious_soil_value + gogogrow_value
+        )
+        self.night_market: float = night_market
+        self.total: float = summoning * self.vial_market * night_market
+
+
+class MagicBeanMulti:
+    def __init__(
+        self, day_market: float, emporium_achievement: float, largumes: float
+    ):
+        self.day_market: float = day_market
+        self.emporium_achievement: float = emporium_achievement
+        self.largumes: float = largumes
+        self.total: float = day_market * emporium_achievement * largumes
+
+
+class OvergrowthMulti:
+    def __init__(
+        self,
+        achievement: float,
+        starsign_value: float,
+        night_market: float,
+        merit: float,
+        land_rank: float,
+        pristine: float,
+        evergrow: float,
+    ):
+        self.evergrow: float = evergrow
+        self.achievement: float = achievement
+        self.starsign_value: float = starsign_value
+        self.starsign: float = ValueToMulti(starsign_value)
+        self.night_market: float = night_market
+        self.merit: float = merit
+        self.land_rank: float = land_rank
+        self.pristine: float = pristine
+        self.total: float = (
+            achievement
+            * self.starsign
+            * night_market
+            * merit
+            * land_rank
+            * pristine
+            * evergrow
+        )
+
+
 class Farming:
     def __init__(self, raw_data: dict):
         self.crops: Crops = Crops()
@@ -568,7 +797,15 @@ class Farming:
             logger.warning("Farming Markets data not present.")
         self._parse_markets(raw_market)
         self.exotic_market: dict[str, ExoticMarketUpgrade] = {}
-        self._parse_exotic_markets(raw_market)
+        raw_spelunk = safe_loads(raw_data.get("Spelunk", []))
+        raw_organic = safer_index(raw_spelunk, 50, [])
+        self._parse_exotic_markets(
+            raw_market,
+            # Float default: an int default would turn index 0 into the default
+            {int(safer_convert(index, -1.0)) for index in raw_organic}
+            if isinstance(raw_organic, list)
+            else set(),
+        )
         self.magic_beans = parse_number(raw_market[1])
         self.magic_bean_unlocked = False
         raw_landrank_info = safe_loads(raw_data.get("FarmRank", []))
@@ -578,8 +815,16 @@ class Farming:
         land_rank_levels: list[int] = safer_index(raw_landrank_info, 0, [])
         land_rank_upgrade: list[int] = safer_index(raw_landrank_info, 2, [])
         self.land_rank = LandRank(land_rank_levels, land_rank_upgrade)
+        raw_research = safe_loads(raw_data.get("Research", []))
+        self.sticker_counts: list[int] = safer_index(raw_research, 9, [])
+        self._crop_evo_sticker_value = 0
         self.total_plots = 1
-        self.multi = {}
+        self.depot_multi: CropDepotMulti | None = None
+        self.value_multi: CropValueMulti | None = None
+        self.evo_multi: CropEvoMulti | None = None
+        self.speed_multi: CropSpeedMulti | None = None
+        self.bean_multi: MagicBeanMulti | None = None
+        self.og_multi: OvergrowthMulti | None = None
 
     def _parse_crops(self, raw_crops: dict):
         for index, amount in raw_crops.items():
@@ -599,245 +844,556 @@ class Farming:
             upgrade = MarketUpgrade(level, upgrade_info, index < 8)
             self.market[upgrade.name] = upgrade
 
-    def _parse_exotic_markets(self, raw_market: list):
+    def _parse_exotic_markets(self, raw_market: list, organic_indexes: set[int]):
         for index, upgrade_info in enumerate(exotic_market_info):
             level = raw_market[index + 20]
-            upgrade = ExoticMarketUpgrade(level, upgrade_info)
+            upgrade = ExoticMarketUpgrade(level, upgrade_info, index in organic_indexes)
             self.exotic_market[upgrade.name] = upgrade
 
-    def calculate_land_rank_bonus(self, multi: float):
+    def _get_exotic_multi(self, *names: str) -> float:
+        """Exotic upgrades that each multiply separately"""
+        multi = 1.0
+        for name in names:
+            multi *= ValueToMulti(self.exotic_market[name].value)
+        return multi
+
+    def _get_exotic_value(self, *names: str) -> float:
+        """Exotic upgrades that add together"""
+        return sum(self.exotic_market[name].value for name in names)
+
+    @property
+    def night_market_discount(self) -> float:
+        # "MarketCostQTY" in source. Last updated in v2.550
+        return max(0.1, 1 - self.exotic_market["BETTER NIGHT I"].value / 100) * max(
+            0.1, 1 - self.exotic_market["BETTER NIGHT II"].value / 100
+        )
+
+    def get_land_rank_multi(self, dank_rank_level: int) -> float:
+        dank_rank = all_talentsDict[dank_rank_talent_index]
+        dank_rank_multi = lava_func(
+            dank_rank['funcX'], dank_rank_level, dank_rank['x1'], dank_rank['x2']
+        )
+        # "ExoticBonusQTY" 14 in source. Last updated in v2.531.0
+        plump_multi = ValueToMulti(self.exotic_market['PLUMP DATABASE'].value)
+        return max(1, dank_rank_multi) * plump_multi
+
+    def calculate_land_rank_bonus(
+        self,
+        dank_rank_level: int,
+        database_maxim_value: float,
+        extended_database_value: float,
+    ):
+        multi = self.get_land_rank_multi(dank_rank_level)
+        # "LandRank5thColumnMaxLV" in source. Last updated in v2.550
+        fifth_column_max_level = round(
+            1
+            + database_maxim_value
+            + ceil(self.exotic_market["DATADIGGING"].value)
+            + extended_database_value
+        )
         for upgrade in self.land_rank.values():
-            upgrade.calculate_bonus(multi)
+            upgrade.calculate_bonus(multi, fifth_column_max_level)
 
     def calculate_crop_depot_bonus(
-        self, lab_multi: float, grimoire_multi: float, emporium: dict[str, Emporium]
+        self,
+        depot_studies: LabBonus,
+        pure_opal_rhombol: LabJewel,
+        grimoire: Grimoire,
+        vault: Vault,
+        emporium: dict[str, Emporium],
+        *,
+        pure_opal_navette: LabJewel,
+        spelunker_obol: LabBonus,
     ):
-        total_multi = lab_multi * grimoire_multi
-        self.multi["Depot"] = {
-            "Lab": lab_multi,
-            "Grimoire": grimoire_multi,
-            "Total": total_multi,
-        }
+        self._depot_studies = depot_studies
+        self._pure_opal_rhombol = pure_opal_rhombol
+        self._pure_opal_navette = pure_opal_navette
+        self._spelunker_obol = spelunker_obol
+        lab_multi = ValueToMulti(
+            (depot_studies.value + pure_opal_rhombol.value) * depot_studies.enabled
+        )
+        # "CropSCbonMulti" in source: Grimoire 22 + Exotic 40 + Vault 79 share one
+        # multi. Last updated in v2.531.0
+        grimoire_multi = ValueToMulti(
+            MultiToValue(grimoire.upgrades['Superior Crop Research'].total_value)
+            + self.exotic_market['SCIENTERRIFIC'].value
+            + vault.upgrades['Properly Funded Research'].total_value
+        )
+        self.depot_multi = CropDepotMulti(lab_multi, grimoire_multi)
         for bonus in self.depot.values():
-            bonus.calculate_bonus(total_multi, self.crops.unlocked, emporium)
+            bonus.calculate_bonus(self.depot_multi.total, self.crops.unlocked, emporium)
 
-    def calculate_market_bonus(self, bought_plot: int):
+    def calculate_market_bonus(
+        self,
+        plot_of_land_owned: int,
+        plot_merit_level: int,
+        day_n_nite_value: float,
+    ):
+        for upgrade in self.market.values():
+            # "MarketMaxLV" in source: these three never gain levels
+            if upgrade.name not in ("Land Plots", "Overgrowth", "Land Rank"):
+                upgrade.add_max_level(day_n_nite_value)
         super_gmo = self.market["Super Gmo"]
         super_gmo.calculate_bonus(self.crops.stack, 1.0)
         for bonus in self.market.values():
             if bonus == super_gmo:
                 continue
             bonus.calculate_bonus(self.crops.stack, super_gmo.as_multi)
-        self.total_plots = 1 + self.market["Land Plots"].level + bought_plot
+        bought_plot = plot_of_land_owned + min(3, plot_merit_level)
+        # "PlotOwned" in source. Last updated in v2.550
+        self.total_plots = min(36, 1 + self.market["Land Plots"].level + bought_plot)
 
     def calculate_exotic_market_bonus(self):
         for bonus in self.exotic_market.values():
             bonus.calculate_bonus()
 
-    def calculate_crop_value_multi(self, ballot: dict):
-        # if ("CropsBonusValue" == e)
-        # return Math.min(100, Math.round(Math.max(1, Math.floor(1 + (c.randomFloat() + q._customBlock_FarmingStuffs("BasketUpgQTY", 0, 5) / 100))) * (1 + q._customBlock_FarmingStuffs("LandRankUpgBonusTOTAL", 1, 0) / 100) * (1 + (q._customBlock_FarmingStuffs("LankRankUpgBonus", 1, 0) * c.asNumber(a.engine.getGameAttribute("FarmRank")[0][0 | t]) + q._customBlock_Summoning("VotingBonusz", 29, 0)) / 100)));
-        value_multi = {}
-        value_multi["Doubler Multi"] = floor(self.market["Product Doubler"].as_multi)
-        value_multi["Mboost Sboost Multi"] = ValueToMulti(
-            self.land_rank["Production Megaboost"].value
-            + self.land_rank["Production Superboost"].value
-        )
-        value_multi["Value GMO Current"] = self.market["Value Gmo"].as_multi
-
-        # Ballot Buff * Active status
-        ballot_value = ballot["Buffs"][29]["Value"] * int(ballot["CurrentBuff"] == 29)
-        # Calculate with the Min Plot Rank
-        value_multi["Pboost Ballot Multi Min"] = ValueToMulti(
-            # Value of PBoost * Lowest Plot Rank
-            self.land_rank["Production Boost"].value * self.land_rank.min_level
-            + ballot_value
-        )
-        value_multi["BeforeCapMin"] = round(
-            max(1, value_multi["Doubler Multi"])  # end of max
-            * value_multi["Mboost Sboost Multi"]
-            * value_multi["Pboost Ballot Multi Min"]
-            * value_multi["Value GMO Current"]
-        )  # end of round
-
-        # Now calculate with the Max Plot Rank
-        value_multi["Pboost Ballot Multi Max"] = ValueToMulti(
-            # Value of PBoost * Highest Plot Rank
-            self.land_rank["Production Boost"].value * self.land_rank.max_level
-            + ballot_value
-        )
-        value_multi["BeforeCapMax"] = round(
-            max(1, value_multi["Doubler Multi"])  # end of max
-            * value_multi["Mboost Sboost Multi"]
-            * value_multi["Pboost Ballot Multi Max"]
-            * value_multi["Value GMO Current"]
-        )  # end of round
-        value_multi["FinalMin"] = min(max_farming_value, value_multi["BeforeCapMin"])
-        value_multi["FinalMax"] = min(max_farming_value, value_multi["BeforeCapMax"])
-        self.multi["Value"] = value_multi
-
-    def calculate_crop_evo_multi(self, map_opened: int, account: "Account"):
-        evo_multi = {}
-        evo_multi["Maps Opened"] = map_opened
-        evo_multi["Cropius Final Value"] = (
-            # TODO: Move to alchemy bonus calculate
-            evo_multi["Maps Opened"]
-            * account.alchemy_bubbles["Cropius Mapper"]["BaseValue"]
-        )
-        evo_multi["Vial Value"] = account.alchemy_vials["Flavorgil (Caulifish)"][
-            "Value"
-        ]
-        evo_multi["Alch Multi"] = (
-            ValueToMulti(evo_multi["Cropius Final Value"])
+    def calculate_crop_value_multi(self, ballot: Ballot):
+        self._value_ballot = ballot[29]
+        # "CropsBonusValue" in source. Last updated in v2.550
+        self.value_multi = CropValueMulti(
+            floor(ValueToMulti(self.product_doubler_chance)),
+            ValueToMulti(
+                self.land_rank["Production Megaboost"].value
+                + self.land_rank["Production Superboost"].value
+            ),
+            self.land_rank["Production Boost"].value,
+            self.land_rank.min_level,
+            self.land_rank.max_level,
+            # Ballot Buff * Active status
+            ballot[29].value * int(ballot[29].active),
+            self.market["Value Gmo"].as_multi,
+            max_farming_value
             * ValueToMulti(
-                # TODO: Move to alchemy bonus calculate
-                account.alchemy_bubbles["Crop Chapter"]["BaseValue"]
-                * max(0, floor((account.tome["Total Points"] - 5000) / 2000))
+                self._get_exotic_value(
+                    "STALK VALUE I", "STALK VALUE II", "STALK VALUE III"
+                )
+            ),
+        )
+
+    @property
+    def product_doubler_chance(self) -> float:
+        return self.market["Product Doubler"].value + self._get_exotic_value(
+            "DOUBLE PETAL I", "DOUBLE PETAL II"
+        )
+
+    def calculate_crop_evo_multi(
+        self,
+        characters: list,
+        alchemy_bubbles: dict,
+        alchemy_vials: dict,
+        tome_score: int,
+        crop_evo_stamp_value: float,
+        meals: Meals,
+        star_signs: StarSigns,
+        farming_levels: list[int],
+        skill_mastery: RiftBonus,
+        ballot_buff: BallotBuff,
+        achievements: Achievements,
+        skull_shop: SkullShop,
+        lamp_wish: LampWish,
+        summoning_bonuses: dict,
+        *,
+        max_summoning_level: int,
+        mass_irrigation_level: int,
+        grimoire: Grimoire,
+        vault: Vault,
+        monument_value: float,
+        sushi_value: float,
+        button_value: float,
+        boony_crowns_value: float,
+        rift_guy_sticker_owned: bool,
+        bettah_stickahs_unlocked: bool,
+        card_value: float,
+    ):
+        # "StickerBonus" in source. Last updated in v2.550
+        self._crop_evo_sticker_value = (
+            ValueToMulti(boony_crowns_value + 30 * rift_guy_sticker_owned)
+            * ValueToMulti(20 * bettah_stickahs_unlocked)
+            * self._crop_evo_sticker_count
+            * sticker_bonus_per_count[crop_evo_sticker_index]
+        )
+        self._max_summoning_level = max_summoning_level
+        self._mass_irrigation_level = mass_irrigation_level
+        self._highest_farming_level = max(farming_levels, default=0)
+        self._cropiovo_unlocked = star_signs["Cropiovo Minor"].unlocked
+        self._lil_overgrowth = achievements["Lil' Overgrowth"].complete
+        self._skull_shop = skull_shop
+        self._skill_mastery_unlocked = skill_mastery.unlocked
+        self._evo_ballot = ballot_buff
+        maps_opened = 0
+        mama_trolls_map_open = False
+        for char in characters:
+            # Clearing the fake portal at Samurai Guardians doesn't count
+            for map_index in range(251, 264):
+                if int(safer_index(char.kill_dict.get(map_index, [1]), 0, 1)) <= 0:
+                    maps_opened += 1
+                    mama_trolls_map_open = mama_trolls_map_open or map_index == 257
+        self.magic_bean_unlocked = mama_trolls_map_open
+        # "ExoticBonusQTY" 4-8 in source: per Farming level above each threshold
+        geneology_value = sum(
+            max(0, self._highest_farming_level - threshold)
+            * self.exotic_market[name].value
+            for name, threshold in (
+                ("GENEOLOGY I", 50),
+                ("GENEOLOGY II", 100),
+                ("GENEOLOGY III", 150),
+                ("GENEOLOGY IV", 200),
+                ("GENEOLOGY V", 250),
             )
-            * ValueToMulti(evo_multi["Vial Value"])
         )
-        # Stamp
-        evo_multi["Stamp Multi"] = ValueToMulti(
-            account.stamps["Crop Evo Stamp"].total_value
-        )
-        # Meals
-        evo_multi["Nyan Stacks"] = ceil(
-            (max(account.all_skills["Summoning"], default=0) + 1) / 50
-        )
-        evo_multi["Meals Multi"] = (
-            ValueToMulti(account.meals['Bill Jack Pep']['Value'])
-            # TODO: move to meal bonus calculate
-            * ValueToMulti(
-                account.meals["Nyanborgir"]["Value"] * evo_multi["Nyan Stacks"]
-            )
-        )
-        # Markets
-        evo_multi["Farm Multi"] = (
+        mass_irrigation = all_talentsDict[mass_irrigation_talent_index]
+        self.evo_multi = CropEvoMulti(
+            maps_opened,
+            # AlchBubbles in source already include the Prisma multi
+            alchemy_bubbles.get_prisma_value("Cropius Mapper"),
+            alchemy_bubbles.get_prisma_value("Crop Chapter"),
+            tome_score,
+            alchemy_vials["Flavorgil (Caulifish)"].value,
+            crop_evo_stamp_value,
+            meals,
             self.market["Biology Boost"].as_multi
-            * self.market["Evolution Gmo"].as_multi
-        )
-        # Land Ranks
-        evo_multi["LR Multi"] = (
+            * self.market["Evolution Gmo"].as_multi,
+            # Ballot adds to Evolution Boost instead of multiplying separately
             ValueToMulti(
                 self.land_rank["Evolution Boost"].value * self.land_rank.min_level
+                + ballot_buff.value * int(ballot_buff.active)
             )
             * ValueToMulti(self.land_rank["Evolution Megaboost"].value)
             * ValueToMulti(self.land_rank["Evolution Superboost"].value)
-            * ValueToMulti(self.land_rank["Evolution Ultraboost"].value)
-        )
-        # Starsign
-        evo_multi["Starsign Final Value"] = (
-            3
-            * account.star_signs["Cropiovo Minor"]["Unlocked"]
-            * max(account.all_skills["Farming"], default=0)
-            * account.star_sign_extras["SilkrodeNanoMulti"]
-            * account.star_sign_extras["SeraphMulti"]
-        )
-        evo_multi["SS Multi"] = ValueToMulti(evo_multi["Starsign Final Value"])
-        # Misc
-        evo_multi["Total Farming Levels"] = sum(account.all_skills["Farming"])
-        evo_multi["Skill Mastery Bonus Bool"] = (
-            account.rift["SkillMastery"] and evo_multi["Total Farming Levels"] >= 300
-        )
-        evo_multi["Ballot Active"] = account.ballot["CurrentBuff"] == 29
-        # TODO: move to Ballot class method that create advice for it
-        if evo_multi["Ballot Active"]:
-            evo_multi["Ballot Status"] = "is Active"
-        elif not evo_multi["Ballot Active"] and account.ballot["CurrentBuff"] != 0:
-            evo_multi["Ballot Status"] = "is Inactive"
-        else:
-            evo_multi["Ballot Status"] = "status is not available in provided data"
-        evo_multi["Ballot Multi Max"] = ValueToMulti(
-            account.ballot["Buffs"][29]["Value"]
-        )
-        evo_multi["Ballot Multi Current"] = max(
-            1, evo_multi["Ballot Multi Max"] * evo_multi["Ballot Active"]
-        )
-        evo_multi["Misc Multi"] = (
-            ValueToMulti(5 * account.achievements["Lil' Overgrowth"]["Complete"])
-            * account.killroy_skullshop["Crop Multi"]
-            * ValueToMulti(
-                15
-                * evo_multi["Skill Mastery Bonus Bool"]
-                * account.rift["SkillMastery"]
+            * ValueToMulti(self.land_rank["Evolution Ultraboost"].value),
+            star_signs,
+            farming_levels,
+            skill_mastery.unlocked,
+            achievements["Lil' Overgrowth"].complete,
+            skull_shop.crop_multi,
+            lamp_wish.value_list[0],
+            summoning_bonuses["Crop EVO"].as_multi,
+            exotic=self._get_exotic_multi(
+                "SPROUTLUCK I", "SPROUTLUCK II", "SPROUTLUCK III", "SPROUTLUCK IV"
             )
-            * evo_multi["Ballot Multi Current"]
+            * ValueToMulti(geneology_value),
+            mass_irrigation=max(
+                1,
+                lava_func(
+                    mass_irrigation['funcX'],
+                    mass_irrigation_level,
+                    mass_irrigation['x1'],
+                    mass_irrigation['x2'],
+                ),
+            ),
+            grimoire_vault=grimoire.upgrades['Sacrifice of Harvest'].total_value
+            * vault.upgrades['Croppius Evolvius'].total_value,
+            monument_value=monument_value,
+            w7_sources=ValueToMulti(sushi_value)
+            * ValueToMulti(button_value)
+            * ValueToMulti(self._crop_evo_sticker_value)
+            * ValueToMulti(card_value),
         )
-        evo_multi["Wish Multi"] = ValueToMulti(
-            account.caverns.caves["The Lamp"].wishes["World 6 Majigers"].value_list[0]
-        )
-        # subtotal doesn't include Crop Chapter
-        evo_multi["Subtotal Multi"] = (
-            evo_multi["Alch Multi"]
-            * evo_multi["Stamp Multi"]
-            * evo_multi["Meals Multi"]
-            * evo_multi["Farm Multi"]
-            * evo_multi["LR Multi"]
-            * account.summoning.bonuses["Crop EVO"].as_multi
-            * evo_multi["SS Multi"]
-            * evo_multi["Misc Multi"]
-            * evo_multi["Wish Multi"]
-        )
-        self.multi["Evo"] = evo_multi
 
-    def calculate_crop_speed(self, account: "Account"):
-        speed_multi = {}
-        # Vial and Day Market
-        speed_multi["Vial Value"] = account.alchemy_vials["Ricecakorade (Rice Cake)"][
-            "Value"
-        ]
-        speed_multi["VM Multi"] = ValueToMulti(
-            speed_multi["Vial Value"] + self.market["Nutritious Soil"].value
+    def calculate_crop_speed(self, alchemy_vials: dict, summoning_bonuses: dict):
+        # "GrowthRate" in source. Last updated in v2.550
+        self.speed_multi = CropSpeedMulti(
+            alchemy_vials["Ricecakorade (Rice Cake)"].value,
+            self.market["Nutritious Soil"].value,
+            self.market["Speed Gmo"].as_multi,
+            summoning_bonuses["Farming SPD"].as_multi,
+            self.exotic_market["GOGOGROW"].value,
         )
-        # Night Market
-        speed_multi["NM Multi"] = self.market["Speed Gmo"].as_multi
-        # Total
-        speed_multi["Total Multi"] = (
-            account.summoning.bonuses["Farming SPD"].as_multi
-            * speed_multi["VM Multi"]
-            * speed_multi["NM Multi"]
-        )
-        self.multi["Speed"] = speed_multi
 
-    def calculate_bean_bonus(self, account):
-        bean_multi = {}
-        bean_multi["mga"] = self.market["More Beenz"].as_multi
-        bean_multi["mgb"] = ValueToMulti(
-            account.sneaking.emporium["Deal Sweetening"].value
-            + (5 * account.achievements["Crop Flooding"]["Complete"])
+    def calculate_bean_bonus(
+        self,
+        deal_sweetening_value: float,
+        achievements: Achievements,
+        vault: Vault,
+    ):
+        self._crop_flooding = achievements["Crop Flooding"].complete
+        # "BeanTradeQTY" in source. Last updated in v2.550
+        self.bean_multi = MagicBeanMulti(
+            self.market["More Beenz"].as_multi,
+            ValueToMulti(
+                deal_sweetening_value
+                + (5 * achievements["Crop Flooding"].complete)
+                + self._get_exotic_value(
+                    "LEGUMIOSO I", "LEGUMIOSO II", "LEGUMIOSO III"
+                )
+                + vault.upgrades['Bigger Better Beans'].total_value
+            ),
+            self._get_exotic_multi("LARGUMES I", "LARGUMES II"),
         )
-        bean_multi["Total Multi"] = bean_multi["mga"] * bean_multi["mgb"]
-        self.multi["Bean"] = bean_multi
 
-    def calculate_og(self, account: "Account"):
-        # Fun calculations
-        og_multi = {}
-        og_multi["Ach Multi"] = ValueToMulti(
-            15 * account.achievements["Big Time Land Owner"]["Complete"]
-        )
-        og_multi["Starsign Final Value"] = (
+    def calculate_og(
+        self,
+        achievements: Achievements,
+        star_signs: StarSigns,
+        og_merit_level: int,
+        taffy_disc_value: float,
+    ):
+        self._big_time_land_owner = achievements["Big Time Land Owner"].complete
+        self._og_signalais_unlocked = star_signs["O.G. Signalais"].unlocked
+        self._og_merit_level = og_merit_level
+        # "NextOGchance" in source. Last updated in v2.550
+        self.og_multi = OvergrowthMulti(
+            ValueToMulti(15 * achievements["Big Time Land Owner"].complete),
             15
-            * account.star_signs["O.G. Signalais"]["Unlocked"]
-            * account.star_sign_extras["SilkrodeNanoMulti"]
-            * account.star_sign_extras["SeraphMulti"]
+            * star_signs["O.G. Signalais"].unlocked
+            * star_signs.silkrode_multi
+            * star_signs.seraph_multi,
+            self.market["Og Fertilizer"].as_multi,
+            ValueToMulti(2 * og_merit_level),
+            ValueToMulti(
+                self.land_rank["Overgrowth Boost"].value
+                + self.land_rank["Overgrowth Megaboost"].value
+                + self.land_rank["Overgrowth Superboost"].value
+            ),
+            ValueToMulti(taffy_disc_value),
+            self._get_exotic_multi("EVERGROW I", "EVERGROW II"),
         )
-        og_multi["SS Multi"] = ValueToMulti(og_multi["Starsign Final Value"])
-        og_multi["NM Multi"] = self.market["Og Fertilizer"].as_multi
-        og_multi["Merit Multi"] = ValueToMulti(2 * account.merits[5][2]["Level"])
-        og_multi["LR Multi"] = ValueToMulti(
-            self.land_rank["Overgrowth Boost"].value
-            + self.land_rank["Overgrowth Megaboost"].value
-            + self.land_rank["Overgrowth Superboost"].value
+
+    def get_depot_lab_advices(self) -> list[Advice]:
+        navette = self._pure_opal_navette
+        spelunker = self._spelunker_obol
+        rhombol = self._pure_opal_rhombol
+        studies = self._depot_studies
+        navette_value = navette.active_value
+        navette_max = navette.base_value
+        spelunker_multi = max(1, spelunker.value)
+        spelunker_max = spelunker.base_value
+        rhombol_value = rhombol.active_value
+        rhombol_max = rhombol.base_value
+        rhombol_enhanced_max = rhombol_max * (spelunker_max + (navette_max / 100))
+        studies_value = max(1, ValueToMulti(studies.value + rhombol_value))
+        studies_max = ValueToMulti(studies.base_value)
+        lab_multi = round_and_trim(self.depot_multi.lab)
+        lab_max = round_and_trim(
+            ValueToMulti(studies.base_value + rhombol_enhanced_max)
         )
-        og_multi["Pristine Multi"] = ValueToMulti(
-            account.sneaking.pristine_charms["Taffy Disc"].value
+        return [
+            Advice(
+                label=f"Lab Jewel: Pure Opal Navette: Increases the value of "
+                f"Spelunker Obol by +{navette_value / 100:.1f}/{navette_max / 100:.1f}"
+                f"<br>(Yes, this jewel is bugged)",
+                picture_class="pure-opal-navette",
+                progression=int(navette.enabled),
+                goal=1,
+            ),
+            Advice(
+                label=f"Lab Bonus: Spelunker Obol: Multiplies the value of Pure Opal "
+                f"Rhombol by {spelunker_multi:.1f}/{spelunker_max:.1f}x",
+                picture_class="spelunker-obol",
+                progression=int(spelunker.enabled),
+                goal=1,
+            ),
+            Advice(
+                label=f"Lab Jewel: Pure Opal Rhombol: Increases Depot Studies by "
+                f"+.{rhombol_value:.0f}/.{rhombol_max:.0f}",
+                picture_class="pure-opal-rhombol",
+                progression=int(rhombol.enabled),
+                goal=1,
+            ),
+            Advice(
+                label=f"Lab Bonus: Depot Studies PhD: "
+                f"{studies_value:.2f}/{studies_max:.2f}x",
+                picture_class="depot-studies-phd",
+                progression=int(studies.enabled),
+                goal=1,
+            ),
+            Advice(
+                label=f"Final Lab multi: {lab_multi}/{lab_max}x"
+                f"<br>Note: Defaulted ON. Sorry {EmojiType.FROWN.value}",
+                picture_class="laboratory",
+                progression=f"{lab_multi}",
+                goal=f"{lab_max}",
+            ),
+        ]
+
+    def get_product_doubler_advice(self) -> Advice:
+        doubler = self.market["Product Doubler"]
+        chance = self.product_doubler_chance
+        return Advice(
+            label=f"Highest full 100 Product Doubler reached for guarantee: "
+            f"{(chance // 100) * 100:.0f}%"
+            f"<br>Day Market: {doubler.value:.0f}%",
+            picture_class="day-market",
+            progression=f"{chance:.0f}",
+            goal=400,
+            unit="%",
         )
-        og_multi["Total Multi"] = (
-            og_multi["Ach Multi"]
-            * og_multi["SS Multi"]
-            * og_multi["NM Multi"]
-            * og_multi["Merit Multi"]
-            * og_multi["LR Multi"]
-            * og_multi["Pristine Multi"]
+
+    def get_value_ballot_advice(self) -> Advice:
+        buff = self._value_ballot
+        return Advice(
+            label=f"Plus Weekly {{{{ Ballot|#bonus-ballot }}}}: "
+            f"{buff.active_multi:.3f}/{buff.multi:.3f}x"
+            f"<br>(Buff {buff.status})",
+            picture_class="ballot-29",
+            progression=int(buff.active),
+            goal=1,
         )
-        self.multi["OG"] = og_multi
+
+    def get_value_lowest_plot_advice(self) -> Advice:
+        return Advice(
+            label=f"Total on Lowest ranked plot<br>Note: {self.value_multi.cap:,.0f}x"
+            " is a HARD cap, only raised by Stalk Value.",
+            picture_class="crop-scientist",
+            progression=f"{self.value_multi.before_cap_min:,.0f}",
+            goal=f"{self.value_multi.cap:,.0f}",
+        )
+
+    def get_value_highest_plot_advice(self) -> Advice:
+        return Advice(
+            label="Total on Highest ranked plot",
+            picture_class="crop-scientist",
+            progression=f"{self.value_multi.before_cap_max:,.0f}",
+            goal=f"{self.value_multi.cap:,.0f}",
+        )
+
+    @property
+    def _crop_evo_sticker_count(self) -> int:
+        return safer_convert(
+            safer_index(self.sticker_counts, crop_evo_sticker_index, 0), 0
+        )
+
+    def get_crop_evo_sticker_advice(self) -> Advice:
+        return Advice(
+            label=f"Crop Evolution Stickers: "
+            f"{round_and_trim(ValueToMulti(self._crop_evo_sticker_value))}x",
+            picture_class="crop-evo-sticker",
+            progression=self._crop_evo_sticker_count,
+        )
+
+    def get_mass_irrigation_advice(self) -> Advice:
+        return Advice(
+            label=f"Talent: Mass Irrigation: {self.evo_multi.mass_irrigation:.3f}x",
+            picture_class="mass-irrigation",
+            progression=self._mass_irrigation_level,
+        )
+
+    def get_nyanborgir_level_advice(self) -> Advice:
+        return Advice(
+            label=f"Highest Summoning level: {self._max_summoning_level}"
+            f"<br>Provides a {self.evo_multi.nyan_stacks}x multi to Nyanborgir",
+            picture_class="summoning",
+        )
+
+    def get_highest_farming_level_advice(self) -> Advice:
+        return Advice(
+            label=f"Highest Farming level: {self._highest_farming_level}",
+            picture_class="farming",
+        )
+
+    def get_cropiovo_advice(self) -> Advice:
+        return Advice(
+            label=f"{{{{ Starsign|#star-signs }}}}: Cropiovo Minor: "
+            f"{3 * self._cropiovo_unlocked:.0f}/3% per farming level."
+            f"<br>Total Value if doubled: {self.evo_multi.starsign_value:,.3f}%",
+            picture_class="cropiovo-minor",
+            progression=int(self._cropiovo_unlocked),
+            goal=1,
+        )
+
+    def get_lil_overgrowth_advice(self) -> Advice:
+        return Advice(
+            label=f"W6 Achievement: Lil' Overgrowth: "
+            f"{1.05 * self._lil_overgrowth:.2f}/1.05x",
+            picture_class="lil-overgrowth",
+            progression=int(self._lil_overgrowth),
+            goal=1,
+        )
+
+    def get_skull_shop_advice(self) -> Advice:
+        shop = self._skull_shop
+        return Advice(
+            label=f"Killroy Skull Shop: {shop.crop_multi:.3f}x"
+            f"<br>1 purchase: +{shop.next_crop_multi - shop.crop_multi:.3f}x",
+            picture_class="killroy-crop-evolution",
+            progression=shop.crop_purchases,
+        )
+
+    def get_skill_mastery_advice(self) -> Advice:
+        evo = self.evo_multi
+        return Advice(
+            label=f"Skill Mastery at 200 Farming: "
+            f"+{1.15 * evo.skill_mastery_active * self._skill_mastery_unlocked}/1.15x",
+            picture_class="farming",
+            progression=evo.total_farming_levels,
+            goal=200,
+        )
+
+    def get_evo_ballot_advice(self) -> Advice:
+        buff = self._evo_ballot
+        return Advice(
+            label=f"Weekly Ballot: {buff.active_multi:.3f}/{buff.multi:.3f}x"
+            f"<br>(Buff {buff.status})",
+            picture_class="ballot-29",
+            progression=int(buff.active),
+            goal=1,
+        )
+
+    def get_target_evo_crop_advice(self) -> Advice:
+        first_crop_index = crop_evo_breakpoint_list[0]
+        target_evo_crop = (
+            first_crop_index,
+            ceil(1 / self.crops.evo_chance(first_crop_index)),
+        )
+        for crop_index in crop_evo_breakpoint_list[1:]:
+            crop_evo_chance = ceil(1 / self.crops.evo_chance(crop_index))
+            if self.evo_multi.total > crop_evo_chance:
+                # Enough evo chance for this crop, so target the previous one
+                break
+            target_evo_crop = crop_index, crop_evo_chance
+        crop_index, crop_evo_chance = target_evo_crop
+        percent = self.evo_multi.total / crop_evo_chance
+        return self.crops.get_crop_evo_advice(crop_index, crop_evo_chance, percent)
+
+    def get_speed_total_advice(self) -> Advice:
+        return Advice(
+            label=f"Farming Speed Multi: {self.speed_multi.total:,.3f}x",
+            picture_class="crop-scientist",
+        )
+
+    def get_bean_total_advice(self) -> Advice:
+        return Advice(
+            label=f"Magic Beans Bonus: {self.bean_multi.total:,.3f}x",
+            picture_class="crop-scientist",
+        )
+
+    def get_crop_flooding_advice(self) -> Advice:
+        return Advice(
+            label=f"W6 Achievement: Crop Flooding: +{5 * self._crop_flooding}/5%",
+            picture_class="crop-flooding",
+            progression=int(self._crop_flooding),
+            goal=1,
+        )
+
+    def get_og_total_advice(self) -> Advice:
+        return Advice(
+            label=f"Overgrowth Chance: {self.og_multi.total:,.3f}x",
+            picture_class="crop-scientist",
+        )
+
+    def get_big_time_land_owner_advice(self) -> Advice:
+        return Advice(
+            label=f"W6 Achievement: Big Time Land Owner: "
+            f"{self.og_multi.achievement:.2f}/1.15x",
+            picture_class="big-time-land-owner",
+            progression=int(self._big_time_land_owner),
+            goal=1,
+        )
+
+    def get_og_signalais_advice(self) -> Advice:
+        return Advice(
+            label=f"{{{{ Starsign|#star-signs }}}}: O.G. Signalais: "
+            f"{15 * self._og_signalais_unlocked:.0f}/15%."
+            f"<br>Total Value if doubled: {self.og_multi.starsign_value:.3f}%",
+            picture_class="og-signalais",
+            progression=int(self._og_signalais_unlocked),
+            goal=1,
+        )
+
+    def get_og_merit_advice(self) -> Advice:
+        return Advice(
+            label=f"W6 Taskboard Merit: +{2 * self._og_merit_level}/30%",
+            picture_class="merit-5-2",
+            progression=self._og_merit_level,
+            goal=15,
+        )

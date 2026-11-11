@@ -5,7 +5,6 @@ from models.general.session_data import session_data
 from models.advice.advice import Advice
 from models.advice.advice_section import AdviceSection
 from models.advice.advice_group import AdviceGroup
-from models.advice.generators.general import get_upgrade_vault_advice
 from utils.misc.add_subgroup_if_available_slot import add_subgroup_if_available_slot
 from utils.logging import get_logger
 
@@ -34,9 +33,19 @@ def getProgressionTiersAdviceGroup() -> tuple[AdviceGroup, int, int, int]:
                         vault_AdviceDict['Tiers'][subgroup_label].append(
                             upgrades[upgrade_name].get_tier_advice(session_data.account.vault.total_upgrades)
                         )
+        elif 'Levels' in requirements:
+            for upgrade_name, target_level in requirements['Levels'].items():
+                upgrade_details = upgrades[upgrade_name]
+                if upgrade_details.level < min(target_level, upgrade_details.max_level):
+                    add_subgroup_if_available_slot(vault_AdviceDict['Tiers'], subgroup_label)
+                    if subgroup_label in vault_AdviceDict['Tiers']:
+                        vault_AdviceDict['Tiers'][subgroup_label].append(
+                            upgrade_details.get_tier_advice(session_data.account.vault.total_upgrades, target_level)
+                        )
         elif 'Exclude' in requirements:
+            max_index = requirements.get('Max Index', len(upgrades))
             for upgrade_name, upgrade_details in session_data.account.vault.upgrades.items():
-                if upgrade_name not in requirements['Exclude']:
+                if upgrade_name not in requirements['Exclude'] and upgrade_details.index <= max_index:
                     if upgrade_details.level < upgrade_details.max_level:
                         add_subgroup_if_available_slot(vault_AdviceDict['Tiers'], subgroup_label)
                         if subgroup_label in vault_AdviceDict['Tiers']:
@@ -61,7 +70,7 @@ def getVaultUpgradesAdviceGroup():
     upgrades_AdviceDict = {}
 
     #Upgrades
-    upgrades_AdviceDict['Upgrades'] = [get_upgrade_vault_advice(upgrade_name, link_to_section=False) for upgrade_name in session_data.account.vault.upgrades.keys()]
+    upgrades_AdviceDict['Upgrades'] = [session_data.account.vault.get_upgrade_advice(upgrade_name, link_to_section=False) for upgrade_name in session_data.account.vault.upgrades.keys()]
     upgrades_AdviceDict['Upgrades'].insert(0, Advice(
         label=f"Total Vault Upgrades: {session_data.account.vault.total_upgrades:,}",
         picture_class='upgrade-vault',

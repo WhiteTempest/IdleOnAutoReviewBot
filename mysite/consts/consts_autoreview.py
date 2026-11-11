@@ -40,6 +40,13 @@ switches = [
         "static": "true",
     },
     {
+        "label": "Potluck Pack owned",
+        "name": "potluck_pack",
+        "true": "",
+        "false": "",
+        "static": "true",
+    },
+    {
         "label": "Order groups by tier",
         "name": "order_tiers",
         "true": "",
@@ -109,6 +116,13 @@ switches = [
         "static": "true",
     },
     {
+        "label": "Manually enter Tome score",
+        "name": "manual_tome",
+        "true": "",
+        "false": "",
+        "static": "true",
+    },
+    {
         "label": "Handedness",
         "name": "handedness",
         "true": "L",
@@ -117,6 +131,7 @@ switches = [
     },
     # {"label": "Legacy style", "name": "legacy", "true": "", "false": ""},
 ]
+max_manual_tome_score = 100000
 
 ###AutoReview consts###
 class AdviceType(Enum):
@@ -178,7 +193,13 @@ versions_patches = {
     297: "v2.43 World 7",
     299: "v2.44 Cropfall Event",
     301: "v2.45 Zenith Statues",
-    306: "v2.46 Bubba Clicker"
+    306: "v2.46 Bubba Clicker",
+    # TODO: some are missing here
+    380: "v2.528.0 Royal Guardian",
+    385: "v2.530.0 W7 Tasks",
+    389: "v2.531.0 Jelly Operator",
+    395: "v2.540.0 Lumi Menagerie",
+    398: "v2.550.0 Halloween Event",
 }
 lowest_accepted_version = 297  # 297.x was the W7 release patch
 ignorable_labels: tuple = ('Weekly Ballot',)

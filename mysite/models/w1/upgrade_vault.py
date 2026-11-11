@@ -1,10 +1,21 @@
 from consts.consts_autoreview import ValueToMulti
 from consts.consts_monster_data import decode_monster_name
 from consts.idleon.master_classes.grimoire import grimoire_coded_stack_monster_order
-from consts.idleon.w1.upgrade_vault import vault_upgrades, vault_stack_types
+from consts.idleon.w1.upgrade_vault import (
+    vault_upgrades,
+    vault_stack_types,
+    glimbo_vault_indices,
+    glimbo_scaled_flags,
+    bundle_max_level_bonus_cap,
+    gilded_awnings_max_level_bonus,
+    gilded_awnings_vault_indices,
+)
 from models.advice.advice import Advice
+from models.general.event_shop import EventShop
+from models.w7.glimbo import Glimbo
+from models.w7.research import ResearchGrid
 from utils.logging import get_logger
-from utils.safer_data_handling import safe_loads, safer_index
+from utils.safer_data_handling import safe_loads, safer_index, safer_convert
 
 logger = get_logger(__name__)
 
@@ -71,22 +82,24 @@ class VaultUpgrade:
             goal=self.max_level,
         )
 
-    def get_tier_advice(self, total_upgrades: int) -> Advice:
+    def get_tier_advice(self, total_upgrades: int, goal: int = 0) -> Advice:
+        goal = min(goal, self.max_level) if goal else self.max_level
+        target = f"Max {self.name}" if goal >= self.max_level else f"{self.name} to Lv {goal}"
         return Advice(
             label=(
-                f"Max {self.name}"
+                f"{target}"
                 f"<br>Requires {self.unlock_requirement - total_upgrades} more Upgrades to unlock"
                 if not self.unlocked else
                 f"{self.name}: {self.description}"
             ),
             picture_class=self.image,
             progression=self.level,
-            goal=self.max_level,
+            goal=goal,
         )
 
 
 class Vault:
-    def __init__(self, raw_data: dict):
+    def __init__(self, raw_data: dict, potluck_pack: bool = False):
         self.upgrades: dict[str, VaultUpgrade] = {}
         self.total_upgrades: int = 0
         raw_optlacc = safe_loads(raw_data.get("OptLacc", []))
@@ -95,15 +108,28 @@ class Vault:
         raw_vault = safe_loads(raw_data.get("UpgVault", []))
         if not raw_vault:
             logger.warning("Upgrade Vault data not present.")
+        # Potluck Pack, from save or switch
+        raw_bundles = safe_loads(raw_data.get("BundlesReceived", {}))
+        raw_bon_u = raw_bundles.get("bon_u", 0) if isinstance(raw_bundles, dict) else 0
+        self.potluck_pack_owned: bool = (
+            potluck_pack or safer_convert(raw_bon_u, 0.0) >= 1
+        )
+        bundle_bonus = bundle_max_level_bonus_cap * self.potluck_pack_owned
         for upgrade in vault_upgrades:
             clean_name = upgrade["Name"]
             if upgrade["Stack Type"]:
                 clean_name += f" ({self.stacks.get(upgrade['Stack Type'], 0)} stacks)"
 
             try:
-                level = min(upgrade["Max Level"], int(raw_vault[upgrade["Index"]]))
+                # clamped in calculate()
+                level = int(raw_vault[upgrade["Index"]])
             except:
                 level = 0
+
+            # bundle bonus skips non-Glimbo 1-level upgrades
+            max_level = upgrade["Max Level"]
+            if upgrade["Index"] in glimbo_vault_indices or max_level >= 2:
+                max_level = round(max_level + bundle_bonus)
 
             self.upgrades[clean_name] = VaultUpgrade(
                 name=clean_name,
@@ -111,7 +137,7 @@ class Vault:
                 level=level,
                 cost_base=upgrade["Cost Base"],
                 cost_increment=upgrade["Cost Increment"],
-                max_level=upgrade["Max Level"],
+                max_level=max_level,
                 value_per_level=upgrade["Value Per Level"],
                 unlock_requirement=upgrade["Unlock Requirement"],
                 description=upgrade["Description"],
@@ -119,21 +145,58 @@ class Vault:
                 vault_section=upgrade["Vault Section"],
             )
 
+        self._by_index: dict[int, VaultUpgrade] = {
+            upgrade.index: upgrade for upgrade in self.upgrades.values()
+        }
+        # before Glimbo trades, so calculate() can rerun
+        self._base_max_levels: dict[int, int] = {
+            upgrade.index: upgrade.max_level for upgrade in self.upgrades.values()
+        }
+        # "VaultTotLV" in source sums raw levels. Last updated in v2.531.0
         self.total_upgrades = sum(upgrade.level for upgrade in self.upgrades.values())
         for upgrade in self.upgrades.values():
             upgrade.unlocked = self.total_upgrades >= upgrade.unlock_requirement
 
-    def calculate(self):
-        mastery = self.upgrades["Vault Mastery"]
-        mastery_ii = self.upgrades["Vault Mastery II"]
-        vault_multi = [
-            ValueToMulti(mastery.level * mastery.value_per_level),
-            ValueToMulti(mastery_ii.level * mastery_ii.value_per_level),
-        ]
-        vault_multi_max = [
-            ValueToMulti(mastery.max_level * mastery.value_per_level),
-            ValueToMulti(mastery_ii.max_level * mastery_ii.value_per_level),
-        ]
+
+    def get_upgrade_advice(
+        self, upgrade_name: str, link_to_section: bool = True, additional_info_text: str = ""
+    ) -> Advice:
+        return self.upgrades[upgrade_name].get_advice(
+            self.total_upgrades, link_to_section, additional_info_text
+        )
+    def calculate(
+        self, glimbo: Glimbo, research_grid: ResearchGrid, event_points_shop: EventShop
+    ):
+        # "VaultUpgMaxLV" in source; before Mastery scaling. Last updated in v2.550
+        awnings_bonus = (
+            gilded_awnings_max_level_bonus * event_points_shop['Gilded Awnings'].owned
+        )
+        max_levels = {
+            index: base_max_level
+            + (awnings_bonus if index in gilded_awnings_vault_indices else 0)
+            for index, base_max_level in self._base_max_levels.items()
+        }
+        for index, max_level in max_levels.items():
+            self._by_index[index].max_level = max_level
+        glimbo_bogo_level = research_grid["Glimbo BOGO Offer"].level
+        glimbo_vip_pass_owned = (
+            event_points_shop['Glimbo VIP Pass'].owned
+        )
+        for slot, vault_index in enumerate(glimbo_vault_indices):
+            upgrade = self._by_index.get(vault_index)
+            if upgrade is None:
+                continue
+            trades = safer_index(glimbo.trades_by_slot, slot, 0)
+            if glimbo_scaled_flags[slot]:
+                trades *= 1 + glimbo_bogo_level + int(glimbo_vip_pass_owned)
+            upgrade.max_level = round(max_levels[vault_index] + trades)
+        # guard only; saves stay within max
+        for upgrade in self.upgrades.values():
+            upgrade.level = min(upgrade.level, upgrade.max_level)
+
+        masteries = [self.upgrades[name] for name in ("Vault Mastery", "Vault Mastery II", "Vault Mastery III")]
+        vault_multi = [ValueToMulti(m.level * m.value_per_level) for m in masteries]
+        vault_multi_max = [ValueToMulti(m.max_level * m.value_per_level) for m in masteries]
         for upgrade in self.upgrades.values():
             scaling_multiplier = vault_multi[upgrade.vault_section - 1] if upgrade.scaling_value else 1
             scaling_multiplier_max = vault_multi_max[upgrade.vault_section - 1] if upgrade.scaling_value else 1

@@ -88,10 +88,12 @@ $id-map: map-merge($id-map, $all-weekly-boss-map);
 @import "construction";
 @import "worship";
 @import "equinox";
+@import "hatrack";
 
 $id-map: map-merge($id-map, $all-construction);
 $id-map: map-merge($id-map, $all-worship);
 $id-map: map-merge($id-map, $equinox);
+$id-map: map-merge($id-map, $hatrack);
 
 //W4
 @import "breeding";
@@ -128,30 +130,36 @@ $id-map: map-merge($id-map, $all-summoning);
 @import "advice_fish";
 @import "clam";
 @import "coral";
+@import "coral_kid";
 @import "dancing_coral";
 @import "gallery";
+@import "jelly_operator";
 @import "legend-talents";
+@import "menagerie";
 @import "meritocracy";
+@import "minehead";
 @import "research";
 @import "spelunking";
-@import "zenith_market";
-@import "coral_kid";
 @import "sushi_station";
 @import "the_button";
+@import "zenith_market";
 
+$id-map :map-merge($id-map, $all-minehead);
 $id-map: map-merge($id-map, $all-advice-fish);
 $id-map: map-merge($id-map, $all-clam);
 $id-map: map-merge($id-map, $all-coral);
 $id-map: map-merge($id-map, $all-gallery);
+$id-map: map-merge($id-map, $all-jelly-operator);
 $id-map: map-merge($id-map, $all-legend-talents);
+$id-map: map-merge($id-map, $all-menagerie);
 $id-map: map-merge($id-map, $all-research);
 $id-map: map-merge($id-map, $all-spelunking);
+$id-map: map-merge($id-map, $all-sushi-station);
+$id-map: map-merge($id-map, $all-the-button);
+$id-map: map-merge($id-map, $coral-kid);
 $id-map: map-merge($id-map, $dancing-coral);
 $id-map: map-merge($id-map, $meritocracy);
 $id-map: map-merge($id-map, $zenith-market);
-$id-map: map-merge($id-map, $coral-kid);
-$id-map: map-merge($id-map, $all-sushi-station);
-$id-map: map-merge($id-map, $all-the-button);
 
 
 @each $class, $link in $id-map {

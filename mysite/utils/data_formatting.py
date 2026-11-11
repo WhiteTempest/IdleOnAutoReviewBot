@@ -16,7 +16,7 @@ from models.custom_exceptions import ProfileNotFound, APIConnectionFailed, WtfDa
 
 from utils.logging import get_logger
 from config import app
-from .safer_data_handling import safe_loads
+from .safer_data_handling import safe_loads, safer_convert, safer_index
 from .text_formatting import InputType
 
 logger = get_logger(__name__)
@@ -39,13 +39,13 @@ class HeaderData:
             self.data_source = self.PUBLIC
             self.link_text = app.config[f"{source_string}_PROFILE_TEMPLATE"].format(username=username)
             self.ie_link = f"https://{self.link_text}"
-            self.first_name = session_data.account.names[0]
+            self.first_name = session_data.account.characters.names[0]
         else:
             self.data_source = self.JSON
-            if session_data.account.names[0] == "Character1":
+            if session_data.account.characters.names[0] == "Character1":
                 self.json_error = "NO SORTED LIST OF CHARACTER NAMES FOUND IN DATA. REPLACING WITH GENERIC NUMBER ORDER."
             else:
-                self.first_name = session_data.account.names[0]
+                self.first_name = session_data.account.characters.names[0]
 
         self.__getLastUpdatedTime()
 
@@ -260,6 +260,7 @@ def getCharacterDetails(inputJSON, runType):
     equipped_cardset = {}
     equipped_star_signs = {}
     main_stats = {}
+    lab_data = safe_loads(inputJSON.get('Lab', []))
 
     for character_index in range(0, character_count):
         character_classes.append(getHumanReadableClasses(inputJSON.get(f'CharacterClass_{character_index}', 0)))
@@ -274,7 +275,7 @@ def getCharacterDetails(inputJSON, runType):
         obols_list[character_index] = safe_loads(inputJSON.get(f'ObolEqO0_{character_index}', []))
         obol_upgrades_list[character_index] = safe_loads(inputJSON.get(f'ObolEqMAP_{character_index}', {}))
         try:
-            equipped_lab_chips[character_index] = safe_loads(inputJSON['Lab'])[character_index + 1]
+            equipped_lab_chips[character_index] = lab_data[character_index + 1]
         except:
             equipped_lab_chips[character_index] = []
         current_preset_talent_bar[character_index] = safe_loads(inputJSON.get(f'AttackLoadout_{character_index}', []))
@@ -320,7 +321,10 @@ def getCharacterDetails(inputJSON, runType):
             equipped_cards_codenames=equipped_cards_codenames[character_index],
             equipped_cardset=equipped_cardset[character_index],
             equipped_star_signs=equipped_star_signs[character_index],
-            main_stats=main_stats[character_index]
+            main_stats=main_stats[character_index],
+            active_talent_preset=safer_convert(safer_index(
+                safe_loads(inputJSON.get(f'PlayerStuff_{character_index}', [])), 1, 0
+            ), 0)
         )
 
     return [character_count, character_names, character_classes, characterDict, perSkillDict]

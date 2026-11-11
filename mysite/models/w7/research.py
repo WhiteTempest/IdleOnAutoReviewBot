@@ -2,7 +2,7 @@ from math import floor
 
 from consts.consts_autoreview import ValueToMulti
 from consts.idleon.consts_idleon import MapDispName
-from consts.idleon.w7.research import research_grid_upgrade_data, research_grid_row_size, observation_data, \
+from consts.idleon.w7.research import Research as ResearchTable, research_grid_upgrade_data, research_grid_row_size, observation_data, \
     posty_notes_descriptions, grid_total_crown_count_indexes, grid_total_observation_levels_index, \
     grid_total_observations_found_index, grid_total_spelunking_index, grid_total_glimbo_trades_index, \
     grid_total_min_roll_index, grid_masterclass_daily_optlacc_index, grid_spelunking_daily_optlacc_index
@@ -14,8 +14,14 @@ from utils.safer_data_handling import safe_loads, safer_index, safer_math_pow, s
 logger = get_logger(__name__)
 
 class ResearchGridUpgrade:
-    def __init__(self, totals: "GridTotals", info: dict, level: int):
+    def __init__(
+        self, totals: "GridTotals", info: dict, level: int, shape_index: int = -1
+    ):
         self.totals = totals
+        # "Research"[1] in source: which shape covers this square, -1 for none
+        self.shape_multi = 1 + safer_convert(
+            safer_index(ResearchTable[5], shape_index, 0), 0
+        ) / 100 if shape_index >= 0 else 1.0
         self.grid_index = info["Grid Index"]
         self.game_index = info["Game Index"]
         self.level = level
@@ -28,10 +34,12 @@ class ResearchGridUpgrade:
         self.max_value = self.base_value_per_level * self.max_level
         self._image = f"research-grid-{self.grid_index}"
 
-    def calculate_bonus(self):
-        # TODO: any mults that increase research bonuses
-        self.value = self.level * self.base_value_per_level
-        self.total_value = round_and_trim(self._calculate_total_value())
+    def calculate_bonus(self, all_multi: float = 1.0):
+        # "Grid_Bonus" variant 0 in source
+        multi = self.shape_multi * max(1.0, all_multi)
+        self.value = self.level * self.base_value_per_level * multi
+        self.max_value = self.base_value_per_level * self.max_level * multi
+        self.total_value = self._calculate_total_value()
 
     def _calculate_total_value(self) -> float:
         # "Grid_Bonus" variant 2 in source
@@ -71,9 +79,8 @@ class ResearchGridUpgrade:
             .replace("&", str(self.totals.masterclass_cost_reduction))
         )
         if self.name == "Divine Design":
-            from utils.misc.has_companion import has_companion
             divine_design_description = "You_are_now_permanently_linked_to_Arctis_on_all_characters".replace("_", " ")
-            if has_companion("King Doot"):
+            if self.totals.has_doot:
                 divine_design_description = "Arctis_nods_in_approval..._all_Research_Grid_bonuses_are_1.05x_higher".replace("_", " ")
             bonus_description = bonus_description.replace("<", divine_design_description)
 
@@ -88,11 +95,16 @@ class ResearchGridUpgrade:
 
 class GridTotals:
     """Account-wide counts the grid's "Total Bonus" values scale off."""
-    def __init__(self, raw_research_info: list, raw_optlacc: list):
+    def __init__(
+        self,
+        raw_research_info: list,
+        raw_optlacc: list,
+        has_doot: bool,
+        glimbo_trades: int,
+    ):
+        self.has_doot = has_doot
         self.crowns_reclaimed = len(safer_index(raw_research_info, 11, []))
-        self.glimbo_trades = round(sum(
-            safer_convert(trades, 0.0) for trades in safer_index(raw_research_info, 12, [])
-        ))
+        self.glimbo_trades = glimbo_trades
         observations_unlocked = safer_index(raw_research_info, 2, [])
         observation_levels = safer_index(raw_research_info, 4, [])
         self.observations_found = sum(
@@ -113,8 +125,22 @@ class GridTotals:
 
 
 class ResearchGrid(dict[str, ResearchGridUpgrade]):
-    def __init__(self, raw_research_info: list, raw_optlacc: list):
-        self.totals = GridTotals(raw_research_info, raw_optlacc)
+    def __init__(
+        self,
+        raw_research_info: list,
+        raw_optlacc: list,
+        has_doot: bool,
+        glimbo_trades: int,
+    ):
+        self.totals = GridTotals(
+            raw_research_info, raw_optlacc, has_doot, glimbo_trades
+        )
+        self.all_multi = 1.0
+        shape_indexes = safer_index(raw_research_info, 1, [])
+        # "Research"[0][173] in source: Divine Design, only pays out alongside King Doot
+        self.divine_design_level = safer_convert(
+            safer_index(safer_index(raw_research_info, 0, []), 173, 0), 0
+        )
 
         research_levels: list[int] = safer_index(raw_research_info, 0, [])
         research_levels: list[list[int]] = [research_levels[i:i + research_grid_row_size] for i in range(0, len(research_levels), research_grid_row_size)]
@@ -125,12 +151,26 @@ class ResearchGrid(dict[str, ResearchGridUpgrade]):
             if info["Name"] == "Name":
                 continue
             level = safer_index(research_levels, index, 0)
-            upgrade = ResearchGridUpgrade(self.totals, info, level)
+            # Float default: safer_convert with an int default turns 0 (a real shape)
+            # into the default
+            shape_index = int(safer_convert(
+                safer_index(shape_indexes, info["Game Index"], -1), -1.0
+            ))
+            upgrade = ResearchGridUpgrade(self.totals, info, level, shape_index)
             self[upgrade.name] = upgrade
+
+    def calculate_all_multi(
+        self, companion_bonus: float, cloud_bonuses: float, sushi_bonus: float
+    ):
+        # "Grid_Bonus_Allmulti" in source
+        divine_design = 5 * min(1, self.divine_design_level * int(self.totals.has_doot))
+        self.all_multi = 1 + (
+            companion_bonus + divine_design + cloud_bonuses + sushi_bonus
+        ) / 100
 
     def calculate_bonuses(self):
         for upgrade in self.values():
-            upgrade.calculate_bonus()
+            upgrade.calculate_bonus(self.all_multi)
 
 
 class Observation:
@@ -196,15 +236,33 @@ class PostyNotes(dict[str, PostyNote]):
 
 
 class Research:
-    def __init__(self, raw_data: dict):
+    # "CloudBonus" in source: these dreams grant their cloud once completed.
+    # Equinox keys dreams one above the raw "d_<n>" index.
+    all_multi_cloud_indexes = (71, 72, 76)
+
+    def __init__(self, raw_data: dict, has_doot: bool, glimbo_trades: int):
         research_level = safer_index(safer_get(raw_data, "Lv0_0", []), 20, 0)
         raw_research_info = safe_loads(raw_data.get("Research", []))
         raw_optlacc = safe_loads(raw_data.get("OptLacc", []))
         if not raw_research_info:
             logger.warning("Research data not present.")
-        self.grid = ResearchGrid(raw_research_info, raw_optlacc)
+        self.grid = ResearchGrid(
+            raw_research_info, raw_optlacc, has_doot, glimbo_trades
+        )
         self.observations = Observations(raw_research_info)
         self.posty_notes = PostyNotes(research_level)
 
-    def calculate_bonuses(self):
+    def calculate_bonuses(
+        self,
+        pirate_deckhand_bonus: float,
+        dreams: dict,
+        sushi_research_multi: float,
+    ):
+        self.grid.calculate_all_multi(
+            # "Companions"(55) in source
+            pirate_deckhand_bonus,
+            sum(dreams[index + 1].completed for index in self.all_multi_cloud_indexes),
+            # "RoG_BonusQTY"(53) in source
+            sushi_research_multi,
+        )
         self.grid.calculate_bonuses()

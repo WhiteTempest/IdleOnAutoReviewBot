@@ -1,10 +1,9 @@
+import functools
 from pathlib import Path
 
 import yaml
 
 
-import models.account_calcs
-import models.account_parser
 from config import app
 from consts.consts_autoreview import versions_patches, lowest_accepted_version
 
@@ -20,7 +19,7 @@ from master_classes import grimoire, compass, tesseract, royal_armory
 from w1 import upgrade_vault, stamps, bribes, smithing, statues, starsigns, owl, darts, basketball
 from w2 import alchemy_vials, alchemy_bubbles, alchemy_p2w, alchemy_sigils, post_office, killroy, islands, arcade, bonus_ballot
 from w3 import trapping, refinery, death_note, worship, salt_lick, buildings, equinox, library, sampling, atom_collider, armor_sets
-from w4 import breeding, cooking, rift
+from w4 import breeding, cape_vine, cooking, rift
 from w5 import slab, divinity, sailing, gaming
 from caverns import villagers, shallow_caverns, glowshroom_tunnels, underground_overgrowth
 from w6 import beanstalk, sneaking, farming, summoning, emperor
@@ -38,13 +37,21 @@ from w7 import (
     the_button,
     dancing_coral,
     coral_kid,
+    jelly_operator,
+    menagerie,
 )
 
 logger = get_logger(__name__)
 
 
+@functools.lru_cache(maxsize=1)
+def _load_banned_accounts(mtime):  # mtime is the cache key
+    with open(Path(app.static_folder) / "banned.yaml") as f:
+        return yaml.load(f, yaml.Loader)
+
+
 def maybe_ban(username, runType):
-    bannedAccountsList = yaml.load(open(Path(app.static_folder) / "banned.yaml"), yaml.Loader)
+    bannedAccountsList = _load_banned_accounts((Path(app.static_folder) / "banned.yaml").stat().st_mtime)
 
     if username in bannedAccountsList:
         if runType == "consoleTest":
@@ -73,7 +80,7 @@ def main(inputData, source_string, runType="web"):
 
     # Step 2: Make account data available throughout the session
     try:
-        session_data.account = Account(parsedJSON, source_string)
+        session_data.account = Account(parsedJSON, source_string, runType)
         patch_guess = ''
         for version in versions_patches:
             if session_data.account.version > version:
@@ -83,13 +90,12 @@ def main(inputData, source_string, runType="web"):
         logger.error(f"Found Version {e.data} < {lowest_accepted_version}. Raising VeryOldDataException.")
         raise VeryOldDataException(e.data)
 
-    models.account_parser.parse_account(session_data.account, runType)
-    models.account_calcs.calculate_account(session_data.account)
+    session_data.account.calculate()
 
-    for name in session_data.account.names:
+    for name in session_data.account.characters.names:
         maybe_ban(name, runType)
 
-    #roastworthyBool = getRoastableStatus(session_data.account.names)
+    #roastworthyBool = getRoastableStatus(session_data.account.characters.names)
 
     # Step 3: Send that data off to all the different analyzers
     # finalize_progression_tiers()
@@ -151,6 +157,7 @@ def main(inputData, source_string, runType="web"):
             breeding.getBreedingAdviceSection(),
             cooking.getCookingAdviceSection(),
             rift.getRiftAdviceSection(),
+            cape_vine.get_section(),
         ],
         sections_5 := [
             slab.getSlabAdviceSection(),
@@ -185,6 +192,8 @@ def main(inputData, source_string, runType="web"):
             dancing_coral.get_dancing_coral_section(),
             coral_kid.get_coral_kid_section(),
             clam_work.get_section(),
+            jelly_operator.get_section(),
+            menagerie.get_section(),
         ]
     ]
 

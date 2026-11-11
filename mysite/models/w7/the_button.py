@@ -11,7 +11,7 @@ from consts.idleon.w7.the_button import (
 from models.advice.advice import Advice
 from utils.logging import get_logger
 from utils.number_formatting import round_and_trim
-from utils.safer_data_handling import safe_loads, safer_index
+from utils.safer_data_handling import safe_loads, safer_index, safer_math_pow
 from utils.text_formatting import notateNumber
 
 logger = get_logger(__name__)
@@ -23,11 +23,16 @@ class ButtonBonus:
         self.label = label
         self.per_time = per_time
         self.activation_count = activation_count
+        self._multi = 1.0
         self.value = per_time * activation_count
+
+    def calculate_bonus(self, multi: float):
+        self._multi = multi
+        self.value = self.per_time * self.activation_count * multi
 
     def get_advice(self) -> Advice:
         # accumulated value is percentage points; the game applies it as `1 + value/100`
-        per_use = f"{round_and_trim(self.per_time / 100)}".lstrip("0")
+        per_use = f"{round_and_trim(self.per_time * self._multi / 100)}".lstrip("0")
         return Advice(
             label=(
                 f"{self.label}: x{round_and_trim(ValueToMulti(self.value))}"
@@ -60,6 +65,12 @@ class TheButton:
             activation_count = 5 * full_cycles + max(0, min(5, remainder - 5 * index))
             self.bonuses[label] = ButtonBonus(index, label, per_time, activation_count)
 
+    def calculate_bonuses(self, mantaray: float, better_button: float):
+        # "Button_BonusMULTI" in source. Last updated in v2.550
+        multi = ValueToMulti(mantaray) * ValueToMulti(better_button)
+        for bonus in self.bonuses.values():
+            bonus.calculate_bonus(multi)
+
     def get_bonus_value(self, name: str) -> float:
         # "Button_Bonuses" in source
         return self.bonuses[name].value
@@ -75,7 +86,7 @@ class TheButton:
             case "step":
                 requirement = task["Base"] + presses / task["Coefficient"]
             case _:
-                requirement = task["Base"] * (task["Coefficient"] ** presses)
+                requirement = task["Base"] * safer_math_pow(task["Coefficient"], presses)
         requirement = math.ceil(requirement)  # game shows whole numbers only
         description = task["Description"].replace(
             "{", notateNumber("Basic", requirement, 0)

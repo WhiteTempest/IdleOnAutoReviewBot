@@ -19,31 +19,35 @@ class CoralKidUpgrade:
         self.base_value = 0
         self.value = 0
         self.unlocked = False
+        self.divinity_requirement_met = False
+        self.second_page_unlocked = False
 
-    def calculate_bonus(self):
-        from models.general.session_data import session_data
-        self.base_value = round_and_trim(coral_kid_upgrades_bonus_base_formulas[self.index]({
+    def calculate_bonus(
+        self,
+        total_divinity_level: int,
+        coral_reef_upgrade_count: int,
+        god_rank: int,
+        second_page_unlocked: bool,
+    ):
+        formula_input = {
             "level": self.level,
-            "total_divinity_level": sum(session_data.account.all_skills["Divinity"]),
-            "coral_reef_upgrade_count": sum(
-                [coral["Level"] for coral in list(session_data.account.coral_reef["Reef Corals"].values())]
-            ),
-            "god_rank": session_data.account.divinity["GodRank"],
-        }), 0)
-
-        self.value = round_and_trim(coral_kid_upgrades_bonus_final_formulas[self.index]({
-            "level": self.level,
-            "total_divinity_level": sum(session_data.account.all_skills["Divinity"]),
-            "coral_reef_upgrade_count": sum(
-                [coral["Level"] for coral in list(session_data.account.coral_reef["Reef Corals"].values())]
-            ),
-            "god_rank": session_data.account.divinity["GodRank"],
-        }), 0)
+            "total_divinity_level": total_divinity_level,
+            "coral_reef_upgrade_count": coral_reef_upgrade_count,
+            "god_rank": god_rank,
+        }
+        self.base_value = round_and_trim(
+            coral_kid_upgrades_bonus_base_formulas[self.index](formula_input), 0
+        )
+        self.value = round_and_trim(
+            coral_kid_upgrades_bonus_final_formulas[self.index](formula_input), 0
+        )
+        self.divinity_requirement_met = self.divinity_required <= total_divinity_level
+        self.second_page_unlocked = second_page_unlocked
+        self.unlocked = self.divinity_requirement_met and (
+            self.index < 6 or second_page_unlocked
+        )
 
     def get_advice(self):
-        from models.general.session_data import session_data
-        total_div_level: int = sum(session_data.account.all_skills["Divinity"])
-        self.unlocked = self.divinity_required <= total_div_level
         description = self.description_template
         if "{" in description:
             description = description.replace("{", str(self.base_value))
@@ -54,9 +58,22 @@ class CoralKidUpgrade:
             description = description.replace("$x", f" {round_and_trim(ValueToMulti(self.value))}x")
         elif "+$%" in description:
             description = description.replace("+$%", f" +{self.value}%")
+        elif "$%" in description:
+            description = description.replace("$%", f"{self.value}%")
 
         if self.index == 3:
             description = "Character's Divinity Skill Lv boosts Minor Link Bonuses."
+
+        if self.index >= 6 and not self.second_page_unlocked:
+            description += (
+                "<br>Requires {{ Menagerie|#luminous-menagerie }} unlock: "
+                "Singularity Mode for the Coral Kid"
+            )
+        if not self.divinity_requirement_met:
+            description += (
+                f"<br>Requires Total Divinity LV of {self.divinity_required}"
+                " across all players"
+            )
         return Advice(
             label=description,
             picture_class=self.image,
@@ -71,10 +88,26 @@ class CoralKid(dict[int, CoralKidUpgrade]):
         if not raw_optlacc:
             logger.warning("Coral Kid data not present.")
         for index, description_template in enumerate(coral_kid_description_templates):
-            level = safer_index(raw_optlacc, 427 + index, 0)
+            if index < 6:
+                level_index = 427 + index
+            else:
+                # 2nd page (Singularity) upgrades
+                level_index = 616 + index - 6
+            level = safer_index(raw_optlacc, level_index, 0)
             upgrade = CoralKidUpgrade(index, level, description_template)
             self[index] = upgrade
 
-    def calculate_bonuses(self):
+    def calculate_bonuses(
+        self,
+        total_divinity_level: int,
+        coral_reef_upgrade_count: int,
+        god_rank: int,
+        second_page_unlocked: bool,
+    ):
         for bonus in self.values():
-            bonus.calculate_bonus()
+            bonus.calculate_bonus(
+                total_divinity_level,
+                coral_reef_upgrade_count,
+                god_rank,
+                second_page_unlocked,
+            )

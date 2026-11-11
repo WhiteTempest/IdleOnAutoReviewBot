@@ -3,13 +3,13 @@
 # instead of once per profile/data submit.
 
 from consts import consts_w2, progression_tiers
-from consts.consts_general import gstack_unique_expected, cardset_names, max_card_stars, greenstack_item_difficulty_groups, gstack_expected_not_rated
+from consts.consts_general import cardset_names, max_card_stars, greenstack_item_difficulty_groups, gstack_expected_not_rated
 from consts.consts_item_data import ITEM_DATA
 from consts.consts_w5 import filter_only_after_gstack, filter_never
 from consts.w1.stamps import unavailable_stamps_list, stamp_maxes
 from consts.consts_w2 import max_maxable_vials
 from consts.consts_w4 import get_final_combat_level_required_for_tome
-from consts.progression_tiers import stamps_progressionTiers, vials_progressionTiers, true_max_tiers, greenstack_progressionTiers, combatLevels_progressionTiers
+from consts.progression_tiers import stamps_progressionTiers, vials_progressionTiers, true_max_tiers, combatLevels_progressionTiers
 from utils.logging import get_logger
 logger = get_logger(__name__)
 
@@ -30,17 +30,6 @@ def finalize_general_greenstacks():
     except Exception as e:
         logger.exception(f"Failed to construct final GStacks tier")
 
-    #Log error if the GStack item counts are out of sync between dict and progressionTier
-    try:
-        assert greenstack_progressionTiers[max(greenstack_progressionTiers.keys())]['Required Stacks'] == len(gstack_unique_expected)
-    except AssertionError:
-        logger.error(
-            f"Total number of Expected GStacks not in sync between "
-            f"tier {greenstack_progressionTiers[max(greenstack_progressionTiers.keys())]['Required Stacks']} and "
-            f"list {len(gstack_unique_expected)}"
-        )
-        greenstack_progressionTiers[max(greenstack_progressionTiers.keys())]['Required Stacks'] = max(greenstack_progressionTiers[max(greenstack_progressionTiers.keys())]['Required Stacks'], len(gstack_unique_expected))
-
 def finalize_general_cards():
     try:
         assert true_max_tiers['Cards'] == len(cardset_names) * (max_card_stars + 1)
@@ -54,14 +43,14 @@ def finalize_general_cards():
 
 def finalize_general_combat_levels():
     try:
-        assert get_final_combat_level_required_for_tome() == combatLevels_progressionTiers[-2][1]
+        assert get_final_combat_level_required_for_tome() == combatLevels_progressionTiers[-1][1]
     except AssertionError:
         logger.error(
             f"Total Account Level for Tome out of sync between "
             f"variable {get_final_combat_level_required_for_tome()} and "
-            f"tier {combatLevels_progressionTiers[-2][1]}"
+            f"tier {combatLevels_progressionTiers[-1][1]}"
         )
-        progression_tiers.combatLevels_progressionTiers[-2][1] = get_final_combat_level_required_for_tome()
+        progression_tiers.combatLevels_progressionTiers[-1][1] = get_final_combat_level_required_for_tome()
 
 
 def finalize_w1_stamps():

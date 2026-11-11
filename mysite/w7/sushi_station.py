@@ -35,12 +35,12 @@ def get_milestones_group() -> AdviceGroup:
 
 
 def get_section():
-    if session_data.account.highest_world_reached < 7:
+    if session_data.account.world_progress.highest_reached < 7:
         return AdviceSection(
             name="Sushi Station",
             tier="Not Yet Evaluated",
             header="Come back after unlocking Sushi Station in W7!",
-            picture="data/Sushi62.png",
+            picture="data/Sushi63.png",
             unreached=True,
         )
 
@@ -49,7 +49,7 @@ def get_section():
         name="Sushi Station",
         tier="",
         header="Sushi Station",
-        picture="data/Sushi62.png",
+        picture="data/Sushi63.png",
         groups=groups,
         informational=True,
         unrated=True,
